@@ -120,30 +120,45 @@ export class LspPool {
         `no tsconfig.json found walking up from ${abs}. tslsp routes by tsconfig root.`,
       );
     }
-    const client = this.getOrCreate(root);
-    await client.ready();
-    await client.ensureProjectSeeded();
+    const client = await this.getOrCreate(root);
     this.lastUsed.set(root, Date.now());
     return { client, root };
   }
 
   /** Resolve by an explicit project root (used for workspace/symbol with no file hint). */
   async forRoot(rootPath: string): Promise<LspClient> {
-    const client = this.getOrCreate(rootPath);
-    await client.ready();
-    await client.ensureProjectSeeded();
+    const client = await this.getOrCreate(rootPath);
     this.lastUsed.set(rootPath, Date.now());
     return client;
   }
 
-  private getOrCreate(root: string): LspClient {
+  /**
+   * Look up or spawn the LspClient for `root`, then await its readiness and
+   * seed. On failure: evict the client from the cache + dispose it so a retry
+   * spawns a fresh tsgo instead of reusing a broken one.
+   */
+  private async getOrCreate(root: string): Promise<LspClient> {
     let client = this.clients.get(root);
+    const fresh = !client;
     if (!client) {
       const bin = resolveTsgoBin(root);
       client = new LspClient({ binPath: bin, rootPath: root, log: this.log });
       this.clients.set(root, client);
     }
-    return client;
+    try {
+      await client.ready();
+      await client.ensureProjectSeeded();
+      return client;
+    } catch (e) {
+      // Only evict if we just created it; otherwise a transient failure on
+      // an existing cached client would needlessly tear down a healthy pool.
+      if (fresh) {
+        this.clients.delete(root);
+        this.lastUsed.delete(root);
+        await client.dispose().catch(() => {});
+      }
+      throw e;
+    }
   }
 
   roots(): string[] {

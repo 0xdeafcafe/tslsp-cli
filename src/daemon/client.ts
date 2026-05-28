@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { openSync } from "node:fs";
+import { closeSync, openSync } from "node:fs";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
 import {
@@ -24,9 +24,10 @@ export class DaemonVersionMismatch extends Error {
     public readonly daemonVersion: string,
     public readonly sessionName: string,
   ) {
+    const sessionFlag = sessionName !== "default" ? ` --session ${sessionName}` : "";
     super(
       `Daemon is v${daemonVersion}; client is v${clientVersion}. ` +
-        `Run \`tslsp restart${sessionName !== "default" ? ` --session ${sessionName}` : ""}\` to upgrade the daemon.`,
+        `Run \`tslsp${sessionFlag} daemon restart\` to upgrade the daemon.`,
     );
   }
 }
@@ -70,6 +71,10 @@ async function spawnDaemon(opts: EnsureOptions): Promise<SessionFile> {
     stdio: ["ignore", "pipe", errFd],
     cwd: opts.workspaceDir,
   });
+  // The child inherited the fd; closing in the parent prevents a per-spawn
+  // fd leak in the CLI process (which is short-lived but may autospawn
+  // several times in a quick refactor loop).
+  closeSync(errFd);
 
   await new Promise<void>((resolve, reject) => {
     let out = "";

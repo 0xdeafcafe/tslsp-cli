@@ -33,9 +33,19 @@ export async function runCli(argv: string[]): Promise<number> {
   const useDaemon = takeFlag(args, "--daemon");
   const useJson = takeFlag(args, "--json");
   const useVerbose = takeFlag(args, "--verbose") || VERBOSE_ENV;
-  const sessionName = takeValue(args, "--session") ?? "default";
+  let sessionName: string;
+  try {
+    sessionName = takeValue(args, "--session") ?? "default";
+  } catch (e) {
+    process.stderr.write(`${(e as Error).message}\n\n${rootHelp()}\n`);
+    return 2;
+  }
 
-  const cmd = args.shift()!;
+  const cmd = args.shift();
+  if (!cmd) {
+    process.stderr.write(`missing subcommand\n\n${rootHelp()}\n`);
+    return 2;
+  }
 
   if (cmd === "install") {
     return runInstall(args);
@@ -63,12 +73,17 @@ function takeFlag(argv: string[], flag: string): boolean {
   return true;
 }
 
-/** Strip and return a `--flag VALUE` pair. Throws-friendly on missing value. */
+/** Strip and return a `--flag VALUE` pair. Throws when the flag is present
+ * without a value, or when the next token looks like another flag (`--…`) —
+ * silently swallowing the next flag as the value is a common footgun. */
 function takeValue(argv: string[], flag: string): string | undefined {
   const i = argv.indexOf(flag);
   if (i < 0) return undefined;
   const value = argv[i + 1];
-  argv.splice(i, value !== undefined ? 2 : 1);
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${flag} requires a value`);
+  }
+  argv.splice(i, 2);
   return value;
 }
 
@@ -212,8 +227,15 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
   // --session and --workspace from its own argv tail because it's invoked
   // directly by spawn() before the global flag parser sees anything.
   if (sub === "serve") {
-    const serveSession = takeValue(argv, "--session") ?? sessionName;
-    const workspaceDir = takeValue(argv, "--workspace") ?? process.cwd();
+    let serveSession: string;
+    let workspaceDir: string;
+    try {
+      serveSession = takeValue(argv, "--session") ?? sessionName;
+      workspaceDir = takeValue(argv, "--workspace") ?? process.cwd();
+    } catch (e) {
+      process.stderr.write(`tslsp daemon serve: ${(e as Error).message}\n`);
+      return 2;
+    }
     const version = (await readVersion()) ?? "0.0.0";
     await serveDaemon({ workspaceDir, sessionName: serveSession, version });
     return 0;

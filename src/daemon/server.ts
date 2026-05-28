@@ -125,6 +125,10 @@ export async function serve(opts: ServerOptions): Promise<void> {
 
   async function handleConnection(socket: Socket): Promise<void> {
     socket.setEncoding("utf8");
+    // Bound how long a connected-but-silent client can hold a connection
+    // open. Otherwise it pins activeConnections > 0 and the idle reaper
+    // never fires. Generous enough to cover legitimate slow clients.
+    socket.setTimeout(30_000, () => socket.destroy());
     const line = await readLine(socket);
     if (line === undefined) {
       socket.destroy();

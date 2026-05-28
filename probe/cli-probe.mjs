@@ -8,7 +8,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dist = resolve(here, "../dist/index.js");
+const cliBin = resolve(here, "../dist/cli.js");
 const sample = resolve(here, "sample");
 
 const exec = promisify(execFile);
@@ -16,7 +16,7 @@ const exec = promisify(execFile);
 async function run(label, args) {
   process.stdout.write(`\n--- ${label} ---\n`);
   try {
-    const { stdout, stderr } = await exec(process.execPath, [dist, ...args], {
+    const { stdout, stderr } = await exec(process.execPath, [cliBin, ...args], {
       cwd: sample,
       env: { ...process.env, TSLSP_VERBOSE: "1" },
     });
@@ -44,5 +44,5 @@ await run("hover --symbol double", ["hover", "--symbol", "double"]);
 await run("outline --file src/math.ts", ["outline", "--file", "src/math.ts"]);
 await run("diagnostics --file src/math.ts", ["diagnostics", "--file", "src/math.ts"]);
 await run("rename --dry-run", ["rename", "--symbol", "add", "--new-name", "sum", "--dry-run"]);
-await run("list", ["list"]);
-await run("stop", ["stop"]);
+await run("daemon list", ["daemon", "list"]);
+await run("daemon stop", ["daemon", "stop"]);

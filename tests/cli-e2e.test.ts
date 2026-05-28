@@ -108,6 +108,28 @@ describe("CLI e2e", () => {
     expect(stdout).toMatch(/--dry-run/);
   });
 
+  it("exits 2 with a friendly error when global flags eat the whole argv", async () => {
+    // `--session` with no following token used to crash on the
+    // `args.shift()!` non-null assertion.
+    const { code, stderr } = await runCli(["--session"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/--session requires a value/);
+  });
+
+  it("exits 2 when --session is followed by another flag", async () => {
+    // Previously --session would silently swallow the next flag as its value.
+    // (--help is not a pre-stripped global, so it lands here as the value.)
+    const { code, stderr } = await runCli(["--session", "--help"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/--session requires a value/);
+  });
+
+  it("exits 2 with a friendly error when given no subcommand", async () => {
+    const { code, stderr } = await runCli(["--daemon"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/missing subcommand/);
+  });
+
   it("exits nonzero on unknown command", async () => {
     const { code, stderr } = await runCli(["nope"]);
     expect(code).not.toBe(0);
