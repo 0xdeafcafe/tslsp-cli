@@ -30,7 +30,8 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "clean": "rm -rf dist",
+    "build": "pnpm run clean && tsc",
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "test": "vitest run",
