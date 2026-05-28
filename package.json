@@ -22,7 +22,7 @@
     "url": "git+https://github.com/0xdeafcafe/tslsp-cli.git"
   },
   "bin": {
-    "tslsp": "dist/cli.js"
+    "tslsp-cli": "dist/cli.js"
   },
   "files": [
     "dist",

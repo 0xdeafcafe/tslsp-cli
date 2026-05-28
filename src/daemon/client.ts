@@ -27,7 +27,7 @@ export class DaemonVersionMismatch extends Error {
     const sessionFlag = sessionName !== "default" ? ` --session ${sessionName}` : "";
     super(
       `Daemon is v${daemonVersion}; client is v${clientVersion}. ` +
-        `Run \`tslsp${sessionFlag} daemon restart\` to upgrade the daemon.`,
+        `Run \`tslsp-cli${sessionFlag} daemon restart\` to upgrade the daemon.`,
     );
   }
 }
@@ -38,7 +38,7 @@ export class DaemonVersionMismatch extends Error {
  *
  * Throws DaemonVersionMismatch when the running daemon is older than the
  * client — never auto-restarts (would race in-flight calls; phase plan calls
- * for explicit `tslsp restart`).
+ * for explicit `tslsp-cli daemon restart`).
  */
 export async function ensureDaemon(opts: EnsureOptions): Promise<SessionFile> {
   const existing = await readSession(opts.workspaceDir, opts.sessionName);
@@ -161,8 +161,9 @@ export async function sendRequest(
 }
 
 /**
- * Locate the bin entry that re-invokes us in daemon-serve mode. The `tslsp`
- * CLI lives at dist/cli.js. Tests can override via TSLSP_DAEMON_ENTRY.
+ * Locate the bin entry that re-invokes us in daemon-serve mode. The CLI
+ * lives at dist/cli.js (installed as `tslsp-cli`). Tests can override via
+ * TSLSP_DAEMON_ENTRY.
  */
 function daemonEntryPoint(): string {
   if (process.env.TSLSP_DAEMON_ENTRY) return process.env.TSLSP_DAEMON_ENTRY;

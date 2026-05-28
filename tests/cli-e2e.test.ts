@@ -94,7 +94,7 @@ describe("CLI e2e", () => {
   it("prints root help with all commands listed", async () => {
     const { code, stdout } = await runCli(["--help"]);
     expect(code).toBe(0);
-    expect(stdout).toMatch(/tslsp — type-aware TypeScript code intelligence CLI/);
+    expect(stdout).toMatch(/tslsp-cli — type-aware TypeScript code intelligence CLI/);
     expect(stdout).toMatch(/find_symbol/);
     expect(stdout).toMatch(/rename_file/);
     expect(stdout).toMatch(/call_hierarchy/);

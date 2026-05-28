@@ -44,7 +44,7 @@ export function resolveTsgoBin(rootPath: string): string {
   );
   if (existsSync(bundled)) return bundled;
   throw new Error(
-    `Could not find tsgo. Install @typescript/native-preview in your workspace or in tslsp's deps.`,
+    `Could not find tsgo. Install @typescript/native-preview in your workspace or in tslsp-cli's deps.`,
   );
 }
 
@@ -83,7 +83,7 @@ export function envIdleMs(name: string, defaultMs: number): number {
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n < 0) {
     process.stderr.write(
-      `tslsp: ignoring invalid ${name}=${JSON.stringify(raw)}; using default ${defaultMs}ms\n`,
+      `tslsp-cli: ignoring invalid ${name}=${JSON.stringify(raw)}; using default ${defaultMs}ms\n`,
     );
     return defaultMs;
   }
@@ -117,7 +117,7 @@ export class LspPool {
     const root = findProjectRoot(abs);
     if (!root) {
       throw new Error(
-        `no tsconfig.json found walking up from ${abs}. tslsp routes by tsconfig root.`,
+        `no tsconfig.json found walking up from ${abs}. tslsp-cli routes by tsconfig root.`,
       );
     }
     const client = await this.getOrCreate(root);

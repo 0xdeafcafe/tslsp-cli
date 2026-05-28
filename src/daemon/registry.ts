@@ -10,7 +10,7 @@ export interface SessionFile {
   version: string;
   /** Path the daemon is listening on. Unix socket; named pipe on Windows. */
   socketPath: string;
-  /** Daemon's pid. Used by `tslsp kill-all` for SIGKILL fallback. */
+  /** Daemon's pid. Used by `tslsp-cli daemon kill-all` for SIGKILL fallback. */
   pid: number;
   /** Absolute path to the tsconfig.json directory the daemon is bound to. */
   workspaceDir: string;

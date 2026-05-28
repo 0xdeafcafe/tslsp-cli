@@ -210,7 +210,7 @@ function emitError(
   if (useJson) {
     process.stdout.write(JSON.stringify({ ok: false, error, exitCode }) + "\n");
   } else {
-    process.stderr.write(`tslsp: ${error}\n`);
+    process.stderr.write(`tslsp-cli: ${error}\n`);
     if (extraHelp) process.stderr.write(`\n${extraHelp}\n`);
   }
   return exitCode;
@@ -233,7 +233,7 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
       serveSession = takeValue(argv, "--session") ?? sessionName;
       workspaceDir = takeValue(argv, "--workspace") ?? process.cwd();
     } catch (e) {
-      process.stderr.write(`tslsp daemon serve: ${(e as Error).message}\n`);
+      process.stderr.write(`tslsp-cli daemon serve: ${(e as Error).message}\n`);
       return 2;
     }
     const version = (await readVersion()) ?? "0.0.0";
@@ -268,7 +268,7 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
   const workspaceDir = findProjectRoot(process.cwd());
   if (!workspaceDir) {
     process.stderr.write(
-      `tslsp daemon ${sub}: no tsconfig.json found walking up from ${process.cwd()}\n`,
+      `tslsp-cli daemon ${sub}: no tsconfig.json found walking up from ${process.cwd()}\n`,
     );
     return 2;
   }
@@ -300,7 +300,7 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
 
 function daemonHelp(): string {
   return [
-    "tslsp daemon <subcommand> [flags]",
+    "tslsp-cli daemon <subcommand> [flags]",
     "",
     "Manage the per-workspace daemon that holds a warm tsgo so subsequent",
     "tool calls (with `--daemon`) skip per-invocation LSP startup.",
@@ -331,17 +331,17 @@ function formatZodError(e: z.ZodError): string {
 
 export function rootHelp(): string {
   const lines = [
-    "tslsp — type-aware TypeScript code intelligence CLI",
+    "tslsp-cli — type-aware TypeScript code intelligence CLI",
     "",
     "usage:",
-    "  tslsp <command> [args]",
-    "  tslsp --daemon <command> [args] route through a warm per-workspace daemon",
-    "  tslsp --json <command> [args]   emit a JSON envelope on stdout",
-    "  tslsp --verbose <command>       forward tsgo stderr (non-daemon path)",
-    '  tslsp --session NAME <command>  pick a named daemon session (default: "default")',
-    "  tslsp daemon <start|stop|restart|list|kill-all>",
-    "  tslsp install --skills [--project] [--force]",
-    "  tslsp <command> --help          per-command help",
+    "  tslsp-cli <command> [args]",
+    "  tslsp-cli --daemon <command> [args] route through a warm per-workspace daemon",
+    "  tslsp-cli --json <command> [args]   emit a JSON envelope on stdout",
+    "  tslsp-cli --verbose <command>       forward tsgo stderr (non-daemon path)",
+    '  tslsp-cli --session NAME <command>  pick a named daemon session (default: "default")',
+    "  tslsp-cli daemon <start|stop|restart|list|kill-all>",
+    "  tslsp-cli install --skills [--project] [--force]",
+    "  tslsp-cli <command> --help          per-command help",
     "",
     "commands:",
   ];
@@ -373,7 +373,7 @@ export function toolHelp(tool: ToolDef): string {
   const flags = Object.keys(shape).filter((k) => !positional.includes(k));
   const lines: string[] = [];
   const posStr = positional.map((p) => `<${p.replace(/_/g, "-")}>`).join(" ");
-  lines.push(`tslsp ${tool.name.replace(/_/g, "-")} ${posStr} [flags]`);
+  lines.push(`tslsp-cli ${tool.name.replace(/_/g, "-")} ${posStr} [flags]`);
   lines.push("");
   lines.push(tool.description);
   if (positional.length) {
@@ -398,7 +398,7 @@ export function toolHelp(tool: ToolDef): string {
 
 function installHelp(): string {
   return [
-    "tslsp install --skills [--project] [--force]",
+    "tslsp-cli install --skills [--project] [--force]",
     "",
     "Install the tslsp skill so Claude Code (and other skill-aware agents) can",
     "discover it and route TypeScript navigation/refactor work through this CLI.",
@@ -429,14 +429,19 @@ async function readVersion(): Promise<string | undefined> {
 const invokedDirectly = (() => {
   if (!process.argv[1]) return false;
   const arg1 = process.argv[1];
-  return arg1.endsWith("/cli.js") || arg1.endsWith("\\cli.js") || arg1.endsWith("/tslsp");
+  return (
+    arg1.endsWith("/cli.js") ||
+    arg1.endsWith("\\cli.js") ||
+    arg1.endsWith("/tslsp-cli") ||
+    arg1.endsWith("\\tslsp-cli")
+  );
 })();
 
 if (invokedDirectly) {
   runCli(process.argv.slice(2))
     .then((code) => process.exit(code))
     .catch((e) => {
-      process.stderr.write(`tslsp fatal: ${e?.stack ?? e}\n`);
+      process.stderr.write(`tslsp-cli fatal: ${e?.stack ?? e}\n`);
       process.exit(1);
     });
 }
