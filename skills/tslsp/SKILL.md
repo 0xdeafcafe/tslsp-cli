@@ -8,7 +8,7 @@ allowed-tools: Bash(tslsp:*), Bash(npx:*)
 
 In any TypeScript/JavaScript project with a `tsconfig.json`, prefer `tslsp` over text tools (`Grep`, `Edit`, `MultiEdit`, `mv`) for symbol-aware work. It talks to the TypeScript language server, so it sees the program, not strings.
 
-If the global `tslsp` binary is missing, fall back to `npx --no-install @0xdeafcafe/tslsp-mcp tslsp …`.
+If the global `tslsp` binary is missing, fall back to `npx --no-install @0xdeafcafe/tslsp-cli tslsp …`.
 
 ## When to use
 

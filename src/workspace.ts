@@ -36,7 +36,7 @@ export function resolveTsgoBin(rootPath: string): string {
   const bundled = join(here, "..", "node_modules", "@typescript", "native-preview", "bin", "tsgo.js");
   if (existsSync(bundled)) return bundled;
   throw new Error(
-    `Could not find tsgo. Install @typescript/native-preview in your workspace or in tslsp-mcp's deps.`,
+    `Could not find tsgo. Install @typescript/native-preview in your workspace or in tslsp's deps.`,
   );
 }
 
@@ -51,10 +51,41 @@ function* walkUpCandidates(start: string): Generator<string> {
   }
 }
 
+export interface LspPoolOptions {
+  log?: (line: string) => void;
+  /**
+   * Reap any tsgo idle longer than this. The daemon as a whole has its own
+   * idle timeout — this is finer-grained, so a daemon serving a monorepo can
+   * release a per-package tsgo without tearing down the daemon. 0 disables.
+   * Default: 10 min. Override via TSLSP_TSGO_IDLE_MS.
+   */
+  tsgoIdleMs?: number;
+}
+
+const DEFAULT_TSGO_IDLE_MS = 10 * 60 * 1000;
+
 export class LspPool {
   private clients = new Map<string, LspClient>();
+  private lastUsed = new Map<string, number>();
+  private reapTimer?: NodeJS.Timeout;
+  private log?: (line: string) => void;
+  private tsgoIdleMs: number;
 
-  constructor(private log?: (line: string) => void) {}
+  constructor(optsOrLog?: LspPoolOptions | ((line: string) => void)) {
+    const opts: LspPoolOptions =
+      typeof optsOrLog === "function" ? { log: optsOrLog } : (optsOrLog ?? {});
+    this.log = opts.log;
+    this.tsgoIdleMs =
+      opts.tsgoIdleMs ??
+      parseInt(process.env.TSLSP_TSGO_IDLE_MS ?? String(DEFAULT_TSGO_IDLE_MS), 10);
+    if (this.tsgoIdleMs > 0) {
+      // Check 4× per idle window, capped at every 30s.
+      const interval = Math.min(30_000, Math.max(1_000, Math.floor(this.tsgoIdleMs / 4)));
+      this.reapTimer = setInterval(() => this.reapIdle(), interval);
+      // Don't keep the event loop alive just for the reaper.
+      this.reapTimer.unref?.();
+    }
+  }
 
   /** Resolve a file path to its LSP client, spawning one if needed. */
   async forFile(filePath: string): Promise<{ client: LspClient; root: string }> {
@@ -62,30 +93,32 @@ export class LspPool {
     const root = findProjectRoot(abs);
     if (!root) {
       throw new Error(
-        `no tsconfig.json found walking up from ${abs}. tslsp-mcp routes by tsconfig root.`,
+        `no tsconfig.json found walking up from ${abs}. tslsp routes by tsconfig root.`,
       );
     }
+    const client = this.getOrCreate(root);
+    await client.ready();
+    await client.ensureProjectSeeded();
+    this.lastUsed.set(root, Date.now());
+    return { client, root };
+  }
+
+  /** Resolve by an explicit project root (used for workspace/symbol with no file hint). */
+  async forRoot(rootPath: string): Promise<LspClient> {
+    const client = this.getOrCreate(rootPath);
+    await client.ready();
+    await client.ensureProjectSeeded();
+    this.lastUsed.set(rootPath, Date.now());
+    return client;
+  }
+
+  private getOrCreate(root: string): LspClient {
     let client = this.clients.get(root);
     if (!client) {
       const bin = resolveTsgoBin(root);
       client = new LspClient({ binPath: bin, rootPath: root, log: this.log });
       this.clients.set(root, client);
     }
-    await client.ready();
-    await client.ensureProjectSeeded();
-    return { client, root };
-  }
-
-  /** Resolve by an explicit project root (used for workspace/symbol with no file hint). */
-  async forRoot(rootPath: string): Promise<LspClient> {
-    let client = this.clients.get(rootPath);
-    if (!client) {
-      const bin = resolveTsgoBin(rootPath);
-      client = new LspClient({ binPath: bin, rootPath, log: this.log });
-      this.clients.set(rootPath, client);
-    }
-    await client.ready();
-    await client.ensureProjectSeeded();
     return client;
   }
 
@@ -94,7 +127,28 @@ export class LspPool {
   }
 
   async disposeAll(): Promise<void> {
+    if (this.reapTimer) clearInterval(this.reapTimer);
+    this.reapTimer = undefined;
     await Promise.allSettled([...this.clients.values()].map((c) => c.dispose()));
     this.clients.clear();
+    this.lastUsed.clear();
+  }
+
+  private reapIdle(): void {
+    if (this.tsgoIdleMs <= 0 || this.clients.size === 0) return;
+    const now = Date.now();
+    for (const [root, ts] of this.lastUsed) {
+      if (now - ts <= this.tsgoIdleMs) continue;
+      const client = this.clients.get(root);
+      if (!client) {
+        this.lastUsed.delete(root);
+        continue;
+      }
+      this.log?.(`[lsp-pool] reaping idle tsgo for ${root}`);
+      this.clients.delete(root);
+      this.lastUsed.delete(root);
+      // Fire-and-forget; dispose is best-effort.
+      void client.dispose().catch(() => {});
+    }
   }
 }

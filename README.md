@@ -1,12 +1,12 @@
-# tslsp-mcp
+# tslsp-cli
 
-[![npm](https://img.shields.io/npm/v/@0xdeafcafe/tslsp-mcp.svg?logo=npm&label=npm)](https://www.npmjs.com/package/@0xdeafcafe/tslsp-mcp)
-[![CI](https://github.com/0xdeafcafe/tslsp-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/0xdeafcafe/tslsp-mcp/actions/workflows/ci.yml)
-[![node](https://img.shields.io/node/v/@0xdeafcafe/tslsp-mcp.svg?logo=node.js)](https://github.com/0xdeafcafe/tslsp-mcp/blob/main/package.json)
+[![npm](https://img.shields.io/npm/v/@0xdeafcafe/tslsp-cli.svg?logo=npm&label=npm)](https://www.npmjs.com/package/@0xdeafcafe/tslsp-cli)
+[![CI](https://github.com/0xdeafcafe/tslsp-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/0xdeafcafe/tslsp-cli/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/@0xdeafcafe/tslsp-cli.svg?logo=node.js)](https://github.com/0xdeafcafe/tslsp-cli/blob/main/package.json)
 
 claude finds references by grepping. claude renames things by find-and-replacing. this is fine until your symbol is called `User` or `get` or `value`, at which point it confidently rewrites half your codebase and tells you it's done. thanks, gas-lightyear.
 
-how do real editors function? they ask the typescript language server, which actually understands what's a reference vs what's just a string. `tslsp-mcp` gives claude that same superpower over an MCP server or a regular CLI. rename is type-aware. references are real references. moving a file rewrites every import that pointed at it. `outline` is the LSP's structural view, not "read 200 lines and hope."
+how do real editors function? they ask the typescript language server, which actually understands what's a reference vs what's just a string. `tslsp-cli` gives claude that same superpower from a regular CLI. rename is type-aware. references are real references. moving a file rewrites every import that pointed at it. `outline` is the LSP's structural view, not "read 200 lines and hope."
 
 it spawns [tsgo](https://github.com/microsoft/typescript-go), microsoft's native go port of tsserver, per `tsconfig.json` it sees, keeps it warm, and routes tool calls to the right one. one process per project, lazy-spawned, not one per request.
 
@@ -16,66 +16,51 @@ designed in my head, built by claudus, tested on your codebase, cheers.
 
 - node 22+
 - a typescript project (anything with a `tsconfig.json`)
-- [claude code](https://claude.com/claude-code), or any other MCP / skill-aware host
+- [claude code](https://claude.com/claude-code), or any other agent that can shell out
 
 ## install
 
-two flavours. pick whichever your agent likes — they expose the same tools.
-
-### CLI + skill
-
 ```bash
-npm install -g @0xdeafcafe/tslsp-mcp
+npm install -g @0xdeafcafe/tslsp-cli
 tslsp install --skills              # ~/.claude/skills/tslsp/SKILL.md
 tslsp install --skills --project    # ./.claude/skills/tslsp (commit it)
 ```
 
 the skill tells claude when to reach for `tslsp` instead of `Grep`/`Edit`/`mv`. `tslsp --help` lists every command; the agent can drive it raw from `--help` if you skip the skill.
 
-### MCP
+prefer source? clone, build, point your tool at the built bin:
 
 ```bash
-claude mcp add -s user tslsp -- npx -y @0xdeafcafe/tslsp-mcp
-```
-
-`-s user` makes it available in every project. drop it (and run from a project dir) to scope to one repo.
-
-prefer to run from source? clone, build, point claude at the built file:
-
-```bash
-git clone https://github.com/0xdeafcafe/tslsp-mcp.git
-cd tslsp-mcp && pnpm install && pnpm run build
-claude mcp add -s user tslsp node /absolute/path/to/tslsp-mcp/dist/index.js
+git clone https://github.com/0xdeafcafe/tslsp-cli.git
+cd tslsp-cli && pnpm install && pnpm run build
+./dist/cli.js --help
 ```
 
 ## make claude actually use it
 
-claude won't reach for an MCP tool just because it exists. you have to tell it, and you have to be explicit about which built-in tool it replaces. `tslsp install --skills` drops a ready-made SKILL.md that does exactly that. if you'd rather paste it yourself, here's the block — works in `~/.claude/CLAUDE.md` or a project's `CLAUDE.md`:
+claude won't reach for an external tool just because it exists. you have to tell it, and you have to be explicit about which built-in tool it replaces. `tslsp install --skills` drops a ready-made SKILL.md that does exactly that. if you'd rather paste it yourself, here's the block — works in `~/.claude/CLAUDE.md` or a project's `CLAUDE.md`:
 
 ```markdown
 ## TypeScript code intelligence (tslsp)
 
-In any TS/JS project with a `tsconfig.json`, the `tslsp` tools are type-aware
-and MUST be used instead of the built-in text tools for the operations below.
-Text tools see strings; tslsp sees the program.
+In any TS/JS project with a `tsconfig.json`, the `tslsp` CLI is type-aware
+and MUST be used (via `Bash`) instead of the built-in text tools for the
+operations below. Text tools see strings; tslsp sees the program.
 
-Names below are the MCP shape (`tslsp:foo`). With the CLI, replace `tslsp:foo`
-with `tslsp foo` — same arguments, same output.
-
-| Task                            | DO use                   | DO NOT use                              |
-| ------------------------------- | ------------------------ | --------------------------------------- |
-| Find every usage of a symbol    | `tslsp:references`       | `Grep`, `Glob`                          |
-| Search for a symbol by name     | `tslsp:find_symbol`      | `Grep`                                  |
-| Jump to a definition            | `tslsp:definition`       | `Grep` + `Read`                         |
-| Jump to a value's *type*        | `tslsp:type_definition`  | `Grep` + `Read`                         |
-| Find concrete implementations   | `tslsp:implementation`   | `Grep`                                  |
-| Rename a symbol                 | `tslsp:rename`           | `Edit`, `MultiEdit`, find-and-replace   |
-| Rename/move a file or folder    | `tslsp:rename_file`      | `mv` / `git mv` (won't update imports)  |
-| Type / JSDoc for a symbol       | `tslsp:hover`            | `Read`                                  |
-| Outline a file before reading   | `tslsp:outline`          | `Read` on the whole file                |
-| Type errors after an edit       | `tslsp:diagnostics`      | `Bash` running `tsc` ad-hoc             |
-| Trace callers / callees         | `tslsp:call_hierarchy`   | repeated `references` calls             |
-| Organize imports / quick-fix    | `tslsp:code_action`      | manual edit                             |
+| Task                            | DO use                          | DO NOT use                              |
+| ------------------------------- | ------------------------------- | --------------------------------------- |
+| Find every usage of a symbol    | `tslsp references --symbol N`   | `Grep`, `Glob`                          |
+| Search for a symbol by name     | `tslsp find-symbol NAME`        | `Grep`                                  |
+| Jump to a definition            | `tslsp definition --symbol N`   | `Grep` + `Read`                         |
+| Jump to a value's *type*        | `tslsp type-definition …`       | `Grep` + `Read`                         |
+| Find concrete implementations   | `tslsp implementation --symbol` | `Grep`                                  |
+| Rename a symbol                 | `tslsp rename … --new-name N`   | `Edit`, find-and-replace                |
+| Rename/move a file or folder    | `tslsp rename-file --from … --to …` | `mv` / `git mv` (won't update imports) |
+| Type / JSDoc for a symbol       | `tslsp hover --symbol NAME`     | `Read`                                  |
+| Outline a file before reading   | `tslsp outline --file FILE`     | `Read` on the whole file                |
+| Type errors after an edit       | `tslsp diagnostics --file F`    | `Bash` running `tsc` ad-hoc             |
+| Trace callers / callees         | `tslsp call-hierarchy --symbol` | repeated `references` calls             |
+| Organize imports / quick-fix    | `tslsp code-action …`           | manual edit                             |
 
 Hard rules:
 
@@ -179,24 +164,38 @@ tslsp code-action --file src/x.ts --kind source.organizeImports --apply 0
 tslsp --help                  # all commands
 tslsp <command> --help        # per-command flags
 tslsp install --skills        # drop SKILL.md into ~/.claude/skills/tslsp/
-tslsp mcp                     # start the MCP server over stdio
+tslsp --daemon <command>      # route through a warm per-workspace daemon
+tslsp --json <command>        # wrap stdout in a JSON envelope for scripting
+tslsp --session NAME <cmd>    # pick a named daemon session
+tslsp daemon start            # explicit spawn (autospawn works too)
+tslsp daemon list             # show running daemons
+tslsp daemon stop             # graceful stop for this workspace
+tslsp daemon restart          # stop + start (use after upgrading)
+tslsp daemon kill-all         # SIGKILL every daemon (escape hatch)
 ```
 
 ## how it works
 
 ```
-claude → stdio → tslsp-mcp → tsgo (project A)
-                           → tsgo (project B)
-                           → ...
+tslsp <cmd>             ← fresh process, fresh LspPool, disposes after the call
+tslsp --daemon <cmd>    ← autospawns a per-workspace daemon, RPCs into it
+                              ↓
+                        LspPool → tsgo (project A)
+                                → tsgo (project B)
+                                → ...
 ```
 
-on first tool call against a file, it walks up to the nearest `tsconfig.json`, spawns tsgo there, opens a seed file so the workspace symbol index populates, and caches the process. subsequent calls reuse it. when you edit files via `rename` or `rename_file`, it pushes `didClose`/`didOpen` + `workspace/didChangeWatchedFiles` (and `didRenameFiles` for moves) so the index reprojects.
+on first call against a file, the host walks up to the nearest `tsconfig.json`, spawns tsgo there, opens a seed file so the workspace symbol index populates, and caches the process. subsequent calls in the same process reuse it. when you edit files via `rename` or `rename-file`, it pushes `didClose`/`didOpen` + `workspace/didChangeWatchedFiles` (and `didRenameFiles` for moves) so the index reprojects.
+
+`--daemon` mode keeps the LspPool alive between CLI calls via a unix socket at `$CACHE/tslsp/daemon/<sha1(tsconfig-dir)>/<session>.sock` (macOS: `~/Library/Caches`, Linux: `$XDG_CACHE_HOME`, Windows: `%LOCALAPPDATA%`; override with `TSLSP_DAEMON_DIR`). The daemon self-exits after 30 min idle (`TSLSP_DAEMON_IDLE_MS`); individual tsgos within it reap after 10 min (`TSLSP_TSGO_IDLE_MS`). After upgrading the published version, run `tslsp daemon restart` so the daemon picks up the new build (otherwise you'll get a friendly version-mismatch error).
 
 ## gotchas
 
 - pins `@typescript/native-preview` to a specific dev build. tsgo moves fast and dev builds shift. bump the version in `package.json` deliberately.
-- if you have an older homebrew-installed `tsgo` on your PATH, the MCP ignores it and uses the npm-pinned one. earlier versions had behavior we explicitly don't want.
-- `rename` and `rename_file` write to disk. `dry_run: true` previews first; `git diff` is your friend either way.
+- if you have an older homebrew-installed `tsgo` on your PATH, tslsp ignores it and uses the npm-pinned one. earlier versions had behavior we explicitly don't want.
+- `rename` and `rename-file` write to disk. `--dry-run` previews first; `git diff` is your friend either way.
 - one tsgo process per `tsconfig.json` root. monorepos with many tsconfigs spawn many tsgos lazily; first hit per project pays project-load cost (~50ms on small, more on large).
-- the CLI spawns a fresh tsgo per invocation. fine for one-off calls; for a tight refactor loop, the MCP server (warm process) is faster.
-- set `TSLSP_VERBOSE=1` (or `TSLSP_MCP_VERBOSE=1`) to forward tsgo's stderr.
+- the CLI spawns a fresh tsgo per invocation by default. fine for one-off calls; for a tight refactor loop, pass `--daemon` for a warm tsgo via unix socket.
+- `--daemon` keeps files open across calls. if you edit files externally between two daemon-routed calls, the daemon's view may briefly lag until the next file-open or `didChangeWatchedFiles` event.
+- daemon stderr lives at `$CACHE/tslsp/daemon/<hash>/<session>.err` — first place to look if a spawn fails.
+- set `TSLSP_VERBOSE=1` to forward tsgo's stderr.
