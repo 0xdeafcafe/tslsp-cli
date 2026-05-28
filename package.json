@@ -2,26 +2,25 @@
   "name": "@0xdeafcafe/tslsp-cli",
   "version": "0.1.0",
   "description": "Type-aware TypeScript code intelligence CLI — rename, references, definitions, hover, symbols, diagnostics, call hierarchy, code actions. Backed by tsgo.",
-  "type": "module",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/0xdeafcafe/tslsp-cli.git"
-  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "cli",
+    "lsp",
+    "refactor",
+    "rename",
+    "tsgo",
+    "typescript"
+  ],
   "homepage": "https://github.com/0xdeafcafe/tslsp-cli#readme",
   "bugs": {
     "url": "https://github.com/0xdeafcafe/tslsp-cli/issues"
   },
-  "keywords": [
-    "typescript",
-    "tsgo",
-    "lsp",
-    "cli",
-    "claude",
-    "claude-code",
-    "rename",
-    "refactor"
-  ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xdeafcafe/tslsp-cli.git"
+  },
   "bin": {
     "tslsp": "dist/cli.js"
   },
@@ -29,6 +28,7 @@
     "dist",
     "skills"
   ],
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -36,6 +36,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
@@ -45,6 +49,8 @@
   "devDependencies": {
     "@types/node": "^22.19.17",
     "@vitest/ui": "^4.1.6",
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   },

@@ -3,12 +3,7 @@ import { createServer, Server, Socket } from "node:net";
 import { z } from "zod";
 import { getTool, ToolResult } from "../tools.js";
 import { LspPool } from "../workspace.js";
-import {
-  deleteSession,
-  ensureProfilesDir,
-  socketPathFor,
-  writeSession,
-} from "./registry.js";
+import { deleteSession, ensureProfilesDir, socketPathFor, writeSession } from "./registry.js";
 import type { Request, Response, RunParams } from "./protocol.js";
 
 export interface ServerOptions {
@@ -30,8 +25,7 @@ const DEFAULT_IDLE_MS = 30 * 60 * 1000;
  */
 export async function serve(opts: ServerOptions): Promise<void> {
   const idleMs =
-    opts.idleTimeoutMs ??
-    parseInt(process.env.TSLSP_DAEMON_IDLE_MS ?? String(DEFAULT_IDLE_MS), 10);
+    opts.idleTimeoutMs ?? parseInt(process.env.TSLSP_DAEMON_IDLE_MS ?? String(DEFAULT_IDLE_MS), 10);
   const readyStream = opts.readyStream ?? process.stdout;
   const socketPath = socketPathFor(opts.workspaceDir, opts.sessionName);
   // macOS caps AF_UNIX paths at 104 bytes (Linux 108). Bind() would fail with
@@ -97,16 +91,19 @@ export async function serve(opts: ServerOptions): Promise<void> {
     resolveUntilShutdown = r;
   });
 
-  const idleTimer = setInterval(() => {
-    if (shuttingDown) return;
-    if (activeConnections > 0) {
-      lastActivity = Date.now();
-      return;
-    }
-    if (Date.now() - lastActivity > idleMs) {
-      void shutdown("idle");
-    }
-  }, Math.min(30_000, Math.max(1_000, Math.floor(idleMs / 4))));
+  const idleTimer = setInterval(
+    () => {
+      if (shuttingDown) return;
+      if (activeConnections > 0) {
+        lastActivity = Date.now();
+        return;
+      }
+      if (Date.now() - lastActivity > idleMs) {
+        void shutdown("idle");
+      }
+    },
+    Math.min(30_000, Math.max(1_000, Math.floor(idleMs / 4))),
+  );
 
   const sigTerm = () => void shutdown("SIGTERM");
   const sigInt = () => void shutdown("SIGINT");
@@ -139,7 +136,11 @@ export async function serve(opts: ServerOptions): Promise<void> {
     try {
       req = JSON.parse(line) as Request;
     } catch (e) {
-      writeResponse(socket, { ok: false, error: `bad request: ${(e as Error).message}`, exitCode: 1 });
+      writeResponse(socket, {
+        ok: false,
+        error: `bad request: ${(e as Error).message}`,
+        exitCode: 1,
+      });
       return;
     }
 
@@ -187,7 +188,10 @@ function writeResponse(socket: Socket, resp: Response): void {
  * The CLI client already parsed + zod-validated args; we re-validate here so a
  * misbehaving client (or version skew) can't slip past the schema.
  */
-async function dispatchRun(pool: LspPool, params: RunParams): Promise<ToolResult & { exitCode?: number }> {
+async function dispatchRun(
+  pool: LspPool,
+  params: RunParams,
+): Promise<ToolResult & { exitCode?: number }> {
   // Tool names use snake_case in the registry but CLI calls them in their
   // registry name (the CLI's renderer flips _ → -). Accept either spelling.
   const cmd = params.cmd.replace(/-/g, "_");
@@ -232,4 +236,3 @@ async function readLine(socket: Socket): Promise<string | undefined> {
     socket.once("error", () => resolve(undefined));
   });
 }
-

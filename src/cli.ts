@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 import { z } from "zod";
 import { fieldDesc, isBoolean, parseArgs, typeHint } from "./cli-args.js";
-import {
-  DaemonVersionMismatch,
-  ensureDaemon,
-  sendRequest,
-} from "./daemon/client.js";
+import { DaemonVersionMismatch, ensureDaemon, sendRequest } from "./daemon/client.js";
 import {
   killAllDaemons,
   listLiveDaemons,
@@ -84,7 +80,8 @@ async function runInstall(argv: string[]): Promise<number> {
     process.stderr.write(`install requires --skills\n\n${installHelp()}\n`);
     return 2;
   }
-  const scope: "user" | "project" = argv.includes("--project") || argv.includes("--local") ? "project" : "user";
+  const scope: "user" | "project" =
+    argv.includes("--project") || argv.includes("--local") ? "project" : "user";
   const force = argv.includes("--force");
   const result = await installSkills({ scope, force });
   for (const line of result.lines) process.stdout.write(line + "\n");
@@ -97,11 +94,7 @@ interface RunToolOpts {
   sessionName?: string;
 }
 
-async function runTool(
-  tool: ToolDef,
-  argv: string[],
-  opts: RunToolOpts = {},
-): Promise<number> {
+async function runTool(tool: ToolDef, argv: string[], opts: RunToolOpts = {}): Promise<number> {
   if (argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(toolHelp(tool) + "\n");
     return 0;
@@ -174,7 +167,12 @@ async function runToolViaDaemon(
 }
 
 /** Stdout result emitter — JSON envelope when --json is set, raw text otherwise. */
-function emitResult(useJson: boolean | undefined, text: string, exitCode: number, isError: boolean): number {
+function emitResult(
+  useJson: boolean | undefined,
+  text: string,
+  exitCode: number,
+  isError: boolean,
+): number {
   if (useJson) {
     process.stdout.write(JSON.stringify({ ok: !isError, text, exitCode }) + "\n");
   } else {
@@ -186,7 +184,12 @@ function emitResult(useJson: boolean | undefined, text: string, exitCode: number
 
 /** Stderr-only error emitter; in --json mode also emits the envelope to stdout
  * so scripts that ignore stderr still get a parseable result. */
-function emitError(useJson: boolean | undefined, error: string, exitCode: number, extraHelp?: string): number {
+function emitError(
+  useJson: boolean | undefined,
+  error: string,
+  exitCode: number,
+  extraHelp?: string,
+): number {
   if (useJson) {
     process.stdout.write(JSON.stringify({ ok: false, error, exitCode }) + "\n");
   } else {
@@ -286,7 +289,7 @@ function daemonHelp(): string {
     "  kill-all           SIGKILL every daemon (escape hatch)",
     "",
     "flags:",
-    "  --session NAME     named session (default: \"default\")",
+    '  --session NAME     named session (default: "default")',
   ].join("\n");
 }
 
@@ -309,7 +312,7 @@ export function rootHelp(): string {
     "  tslsp <command> [args]",
     "  tslsp --daemon <command> [args] route through a warm per-workspace daemon",
     "  tslsp --json <command> [args]   emit a JSON envelope on stdout",
-    "  tslsp --session NAME <command>  pick a named daemon session (default: \"default\")",
+    '  tslsp --session NAME <command>  pick a named daemon session (default: "default")',
     "  tslsp daemon <start|stop|restart|list|kill-all>",
     "  tslsp install --skills [--project] [--force]",
     "  tslsp <command> --help          per-command help",
@@ -346,7 +349,8 @@ export function toolHelp(tool: ToolDef): string {
   if (positional.length) {
     lines.push("");
     lines.push("arguments:");
-    for (const k of positional) lines.push(`  ${k.replace(/_/g, "-").padEnd(18)}  ${fieldDesc(shape[k]!)}`);
+    for (const k of positional)
+      lines.push(`  ${k.replace(/_/g, "-").padEnd(18)}  ${fieldDesc(shape[k]!)}`);
   }
   if (flags.length) {
     lines.push("");
@@ -354,7 +358,9 @@ export function toolHelp(tool: ToolDef): string {
     for (const k of flags) {
       const ty = shape[k]!;
       const hint = isBoolean(ty) ? "" : ` <${typeHint(ty)}>`;
-      lines.push(`  --${k.replace(/_/g, "-")}${hint.padEnd(Math.max(0, 18 - k.length - hint.length))}  ${fieldDesc(ty)}`);
+      lines.push(
+        `  --${k.replace(/_/g, "-")}${hint.padEnd(Math.max(0, 18 - k.length - hint.length))}  ${fieldDesc(ty)}`,
+      );
     }
   }
   return lines.join("\n");

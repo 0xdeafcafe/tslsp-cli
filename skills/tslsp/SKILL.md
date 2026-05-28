@@ -12,20 +12,20 @@ If the global `tslsp` binary is missing, fall back to `npx --no-install @0xdeafc
 
 ## When to use
 
-| task                              | use                        | not                |
-| --------------------------------- | -------------------------- | ------------------ |
-| find usages of a symbol           | `tslsp references`         | `grep`             |
-| search workspace for a symbol     | `tslsp find-symbol`        | `grep`             |
-| jump to a definition              | `tslsp definition`         | `grep` + `read`    |
-| jump to a value's *type*          | `tslsp type-definition`    | `grep` + `read`    |
-| find concrete implementations     | `tslsp implementation`     | `grep`             |
-| rename a symbol                   | `tslsp rename`             | `edit`/`multi-edit`/find-and-replace |
-| **move/rename a file or folder**  | `tslsp rename-file`        | `mv` / `git mv` (breaks every import) |
-| type/JSDoc for a symbol           | `tslsp hover`              | `read`             |
-| outline a file before reading     | `tslsp outline`            | full `read`        |
-| type errors after an edit         | `tslsp diagnostics`        | ad-hoc `tsc`       |
-| trace callers / callees           | `tslsp call-hierarchy`     | repeated `references` |
-| organize-imports / quick-fixes    | `tslsp code-action`        | manual edit        |
+| task                             | use                     | not                                   |
+| -------------------------------- | ----------------------- | ------------------------------------- |
+| find usages of a symbol          | `tslsp references`      | `grep`                                |
+| search workspace for a symbol    | `tslsp find-symbol`     | `grep`                                |
+| jump to a definition             | `tslsp definition`      | `grep` + `read`                       |
+| jump to a value's _type_         | `tslsp type-definition` | `grep` + `read`                       |
+| find concrete implementations    | `tslsp implementation`  | `grep`                                |
+| rename a symbol                  | `tslsp rename`          | `edit`/`multi-edit`/find-and-replace  |
+| **move/rename a file or folder** | `tslsp rename-file`     | `mv` / `git mv` (breaks every import) |
+| type/JSDoc for a symbol          | `tslsp hover`           | `read`                                |
+| outline a file before reading    | `tslsp outline`         | full `read`                           |
+| type errors after an edit        | `tslsp diagnostics`     | ad-hoc `tsc`                          |
+| trace callers / callees          | `tslsp call-hierarchy`  | repeated `references`                 |
+| organize-imports / quick-fixes   | `tslsp code-action`     | manual edit                           |
 
 ## Locator forms
 
@@ -93,7 +93,7 @@ tslsp code-action --file src/x.ts --kind source.organizeImports --apply 0
 
 ## Hard rules
 
-1. **NEVER rename a TypeScript identifier with `Edit` or `MultiEdit`.** Use `tslsp rename`. Pass `--dry-run` first when the symbol has many call sites; review the preview, then apply. This applies to *every* identifier — slice keys (`features.fooUi`), property names, enum members, the lot. If you find yourself string-editing a symbol "just for a couple of files" you have already failed the rule. For bulk renames (e.g., renaming a whole feature), enumerate symbols via `tslsp outline` on each file in the folder first, then call `tslsp rename` once per symbol — ~5× cheaper in tokens than grep+Read+Edit and safer (no false positives in comments / strings / unrelated identifiers).
+1. **NEVER rename a TypeScript identifier with `Edit` or `MultiEdit`.** Use `tslsp rename`. Pass `--dry-run` first when the symbol has many call sites; review the preview, then apply. This applies to _every_ identifier — slice keys (`features.fooUi`), property names, enum members, the lot. If you find yourself string-editing a symbol "just for a couple of files" you have already failed the rule. For bulk renames (e.g., renaming a whole feature), enumerate symbols via `tslsp outline` on each file in the folder first, then call `tslsp rename` once per symbol — ~5× cheaper in tokens than grep+Read+Edit and safer (no false positives in comments / strings / unrelated identifiers).
 2. **NEVER `mv` or `git mv` a TypeScript file or folder.** Use `tslsp rename-file` — it walks every `import` that references it and rewrites them. After the move you can still use `tslsp rename` for any identifier inside the file; combine the two passes. Folders are supported and traversed recursively.
 3. **NEVER `grep` for a symbol name to find usages or definitions.** Use `tslsp references` / `tslsp definition`. Grep matches strings in comments, in unrelated identifiers, in `.md` files — it lies.
 4. **Before reading a large file, call `tslsp outline` first** and use the line numbers to `read` only the slices you need. Do not page through 100s of lines hunting for a function.

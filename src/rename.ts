@@ -18,7 +18,11 @@ function collectEdits(edit: WorkspaceEdit): FileEdits[] {
   }
   if (edit.documentChanges) {
     for (const dc of edit.documentChanges) {
-      out.push({ uri: dc.textDocument.uri, filePath: fileURLToPath(dc.textDocument.uri), edits: dc.edits });
+      out.push({
+        uri: dc.textDocument.uri,
+        filePath: fileURLToPath(dc.textDocument.uri),
+        edits: dc.edits,
+      });
     }
   }
   return out;

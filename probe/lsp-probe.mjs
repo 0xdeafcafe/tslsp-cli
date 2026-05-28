@@ -35,8 +35,14 @@ function request(method, params, timeoutMs = 5000) {
       reject(new Error(`timeout after ${timeoutMs}ms waiting for ${method}`));
     }, timeoutMs);
     pending.set(id, {
-      resolve: (v) => { clearTimeout(t); resolve(v); },
-      reject: (e) => { clearTimeout(t); reject(e); },
+      resolve: (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      reject: (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
     });
     process.stderr.write(`[probe] -> ${method} (id=${id})\n`);
     send({ jsonrpc: "2.0", id, method, params });
@@ -61,7 +67,11 @@ tsgo.stdout.on("data", (chunk) => {
     const body = buf.slice(sep + 4, total).toString("utf8");
     buf = buf.slice(total);
     let msg;
-    try { msg = JSON.parse(body); } catch { continue; }
+    try {
+      msg = JSON.parse(body);
+    } catch {
+      continue;
+    }
     if (msg.id !== undefined && pending.has(msg.id)) {
       const { resolve, reject } = pending.get(msg.id);
       pending.delete(msg.id);
@@ -95,23 +105,32 @@ tsgo.stdout.on("data", (chunk) => {
 
   const caps = init.capabilities ?? {};
   console.log("=== ServerCapabilities (selected) ===");
-  console.log(JSON.stringify({
-    renameProvider: caps.renameProvider,
-    referencesProvider: caps.referencesProvider,
-    definitionProvider: caps.definitionProvider,
-    documentSymbolProvider: caps.documentSymbolProvider,
-    workspaceSymbolProvider: caps.workspaceSymbolProvider,
-    codeActionProvider: caps.codeActionProvider,
-    hoverProvider: caps.hoverProvider,
-    completionProvider: caps.completionProvider ? "yes" : undefined,
-    signatureHelpProvider: caps.signatureHelpProvider ? "yes" : undefined,
-    implementationProvider: caps.implementationProvider,
-    typeDefinitionProvider: caps.typeDefinitionProvider,
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        renameProvider: caps.renameProvider,
+        referencesProvider: caps.referencesProvider,
+        definitionProvider: caps.definitionProvider,
+        documentSymbolProvider: caps.documentSymbolProvider,
+        workspaceSymbolProvider: caps.workspaceSymbolProvider,
+        codeActionProvider: caps.codeActionProvider,
+        hoverProvider: caps.hoverProvider,
+        completionProvider: caps.completionProvider ? "yes" : undefined,
+        signatureHelpProvider: caps.signatureHelpProvider ? "yes" : undefined,
+        implementationProvider: caps.implementationProvider,
+        typeDefinitionProvider: caps.typeDefinitionProvider,
+      },
+      null,
+      2,
+    ),
+  );
 
   notify("initialized", {});
 
-  for (const [uri, path] of [[mathUri, mathPath], [indexUri, indexPath]]) {
+  for (const [uri, path] of [
+    [mathUri, mathPath],
+    [indexUri, indexPath],
+  ]) {
     notify("textDocument/didOpen", {
       textDocument: {
         uri,

@@ -47,7 +47,16 @@ beforeAll(async () => {
   writeFileSync(
     resolve(workspace, "tsconfig.json"),
     JSON.stringify(
-      { compilerOptions: { target: "es2022", module: "esnext", moduleResolution: "bundler", strict: true, noEmit: true }, include: ["src/**/*"] },
+      {
+        compilerOptions: {
+          target: "es2022",
+          module: "esnext",
+          moduleResolution: "bundler",
+          strict: true,
+          noEmit: true,
+        },
+        include: ["src/**/*"],
+      },
       null,
       2,
     ),
@@ -150,11 +159,7 @@ describe("CLI e2e", () => {
       expect(list.stdout).toMatch(/alive\s+pid=\d+.*session=default/);
 
       // --json envelope on the daemon path.
-      const json = await runCli(
-        ["--daemon", "--json", "find-symbol", "add"],
-        workspace,
-        env,
-      );
+      const json = await runCli(["--daemon", "--json", "find-symbol", "add"], workspace, env);
       expect(json.code).toBe(0);
       const parsed = JSON.parse(json.stdout.trim());
       expect(parsed.ok).toBe(true);
@@ -200,8 +205,10 @@ describe("CLI e2e", () => {
   it("rejects schema-violating args (--apply -1 fails .nonnegative())", async () => {
     const { code, stderr } = await runCli([
       "code-action",
-      "--file", resolve(workspace, "src/math.ts"),
-      "--apply", "-1",
+      "--file",
+      resolve(workspace, "src/math.ts"),
+      "--apply",
+      "-1",
     ]);
     expect(code).toBe(2);
     expect(stderr).toMatch(/invalid --apply/);

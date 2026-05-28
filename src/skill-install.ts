@@ -46,8 +46,10 @@ export async function installSkills(opts: InstallOpts): Promise<InstallResult> {
   await mkdir(dirname(dst), { recursive: true });
   await copyFile(src, dst);
   lines.push(`installed skill: ${dst}`);
-  lines.push(opts.scope === "user"
-    ? "  available to every project on this machine."
-    : "  scoped to this project; commit .claude/skills/tslsp/ to share with your team.");
+  lines.push(
+    opts.scope === "user"
+      ? "  available to every project on this machine."
+      : "  scoped to this project; commit .claude/skills/tslsp/ to share with your team.",
+  );
   return { ok: true, lines };
 }

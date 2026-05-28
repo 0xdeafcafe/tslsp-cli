@@ -59,8 +59,16 @@ export interface ToolContext {
 const locatorShape = {
   file: z.string().optional().describe("File path."),
   line: z.number().int().nonnegative().optional().describe("Zero-based line."),
-  character: z.number().int().nonnegative().optional().describe("Zero-based column. Use with line."),
-  symbol: z.string().optional().describe("Identifier text. Workspace-wide alone, or scan a line with file+line."),
+  character: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Zero-based column. Use with line."),
+  symbol: z
+    .string()
+    .optional()
+    .describe("Identifier text. Workspace-wide alone, or scan a line with file+line."),
 };
 
 const ok = (text: string): ToolResult => ({ text });
@@ -161,14 +169,17 @@ const symbolsField = {
   symbols: z
     .array(z.string().min(1))
     .optional()
-    .describe("Batch: list of symbol names. Runs each as a workspace query in parallel and labels output."),
+    .describe(
+      "Batch: list of symbol names. Runs each as a workspace query in parallel and labels output.",
+    ),
 };
 
 // ---- tool defs ----
 
 const findSymbol = defineTool({
   name: "find_symbol",
-  description: "Search the workspace for symbols by name. Returns `path:line  kind name`. Fuzzy match.",
+  description:
+    "Search the workspace for symbols by name. Returns `path:line  kind name`. Fuzzy match.",
   positional: ["query"],
   inputSchema: {
     query: z.string().min(1).describe("Substring to match."),
@@ -184,7 +195,9 @@ const findSymbol = defineTool({
             const c = await ctx.pool.forFile(probePath).catch(() => null);
             return c ?? { client: await ctx.pool.forRoot(probePath), root: probePath };
           })();
-      const matches = ((await client.request<SymbolInformation[] | null>("workspace/symbol", { query })) ?? []).slice(0, limit ?? 50);
+      const matches = (
+        (await client.request<SymbolInformation[] | null>("workspace/symbol", { query })) ?? []
+      ).slice(0, limit ?? 50);
       if (file) {
         const targetUri = abs(file, ctx.cwd);
         const filtered = matches.filter((s) => s.location.uri.endsWith(targetUri));
@@ -204,11 +217,12 @@ async function referencesOne(
   limit: number | undefined,
 ): Promise<ToolResult> {
   return withLocator(ctx, loc, async ({ client, root, uri, position }) => {
-    const refs = (await client.request<Location[] | null>("textDocument/references", {
-      textDocument: { uri },
-      position,
-      context: { includeDeclaration: include_declaration ?? true },
-    })) ?? [];
+    const refs =
+      (await client.request<Location[] | null>("textDocument/references", {
+        textDocument: { uri },
+        position,
+        context: { includeDeclaration: include_declaration ?? true },
+      })) ?? [];
     if (!refs.length) return ok("no references");
     const f = await formatLocations(refs, root, limit ?? 200);
     return ok(f.text);
@@ -217,7 +231,8 @@ async function referencesOne(
 
 const references = defineTool({
   name: "references",
-  description: "All references to a symbol. Single locator, or batch via `symbols` (array, parallel).",
+  description:
+    "All references to a symbol. Single locator, or batch via `symbols` (array, parallel).",
   inputSchema: {
     ...locatorShape,
     ...symbolsField,
@@ -226,7 +241,11 @@ const references = defineTool({
   },
   handler: async ({ symbols, include_declaration, limit, ...loc }, ctx) => {
     if (symbols && symbols.length) {
-      return fanout(symbols, (s) => s, (s) => referencesOne({ symbol: s }, ctx, include_declaration, limit));
+      return fanout(
+        symbols,
+        (s) => s,
+        (s) => referencesOne({ symbol: s }, ctx, include_declaration, limit),
+      );
     }
     return referencesOne(loc as SymbolLocator, ctx, include_declaration, limit);
   },
@@ -257,7 +276,11 @@ const definition = defineTool({
   inputSchema: { ...locatorShape, ...symbolsField },
   handler: async ({ symbols, ...loc }, ctx) => {
     if (symbols && symbols.length) {
-      return fanout(symbols, (s) => s, (s) => locationsOne("textDocument/definition", "no definition", 20, { symbol: s }, ctx));
+      return fanout(
+        symbols,
+        (s) => s,
+        (s) => locationsOne("textDocument/definition", "no definition", 20, { symbol: s }, ctx),
+      );
     }
     return locationsOne("textDocument/definition", "no definition", 20, loc as SymbolLocator, ctx);
   },
@@ -265,25 +288,55 @@ const definition = defineTool({
 
 const typeDefinition = defineTool({
   name: "type_definition",
-  description: "Type declaration of a symbol (vs. value declaration). Single locator, or batch via `symbols`.",
+  description:
+    "Type declaration of a symbol (vs. value declaration). Single locator, or batch via `symbols`.",
   inputSchema: { ...locatorShape, ...symbolsField },
   handler: async ({ symbols, ...loc }, ctx) => {
     if (symbols && symbols.length) {
-      return fanout(symbols, (s) => s, (s) => locationsOne("textDocument/typeDefinition", "no type definition", 20, { symbol: s }, ctx));
+      return fanout(
+        symbols,
+        (s) => s,
+        (s) =>
+          locationsOne("textDocument/typeDefinition", "no type definition", 20, { symbol: s }, ctx),
+      );
     }
-    return locationsOne("textDocument/typeDefinition", "no type definition", 20, loc as SymbolLocator, ctx);
+    return locationsOne(
+      "textDocument/typeDefinition",
+      "no type definition",
+      20,
+      loc as SymbolLocator,
+      ctx,
+    );
   },
 });
 
 const implementation = defineTool({
   name: "implementation",
-  description: "Concrete implementations of an interface/abstract member. Single locator, or batch via `symbols`.",
+  description:
+    "Concrete implementations of an interface/abstract member. Single locator, or batch via `symbols`.",
   inputSchema: { ...locatorShape, ...symbolsField },
   handler: async ({ symbols, ...loc }, ctx) => {
     if (symbols && symbols.length) {
-      return fanout(symbols, (s) => s, (s) => locationsOne("textDocument/implementation", "no implementations", 100, { symbol: s }, ctx));
+      return fanout(
+        symbols,
+        (s) => s,
+        (s) =>
+          locationsOne(
+            "textDocument/implementation",
+            "no implementations",
+            100,
+            { symbol: s },
+            ctx,
+          ),
+      );
     }
-    return locationsOne("textDocument/implementation", "no implementations", 100, loc as SymbolLocator, ctx);
+    return locationsOne(
+      "textDocument/implementation",
+      "no implementations",
+      100,
+      loc as SymbolLocator,
+      ctx,
+    );
   },
 });
 
@@ -316,7 +369,8 @@ const rename = defineTool({
 
 const renameFile = defineTool({
   name: "rename_file",
-  description: "Move/rename a file or folder and update every import that references it. Pass dry_run to preview.",
+  description:
+    "Move/rename a file or folder and update every import that references it. Pass dry_run to preview.",
   positional: ["old_path", "new_path"],
   inputSchema: {
     old_path: z.string().min(1).describe("Existing file or folder path."),
@@ -362,7 +416,11 @@ const hover = defineTool({
   inputSchema: { ...locatorShape, ...symbolsField },
   handler: async ({ symbols, ...loc }, ctx) => {
     if (symbols && symbols.length) {
-      return fanout(symbols, (s) => s, (s) => hoverOne({ symbol: s }, ctx));
+      return fanout(
+        symbols,
+        (s) => s,
+        (s) => hoverOne({ symbol: s }, ctx),
+      );
     }
     return hoverOne(loc as SymbolLocator, ctx);
   },
@@ -380,7 +438,11 @@ async function outlineOne(file: string, ctx: ToolContext): Promise<ToolResult> {
     if (!result || !result.length) return ok("(empty)");
     if ("range" in result[0]!) return ok(formatOutline(result as DocumentSymbol[]));
     const flat = result as SymbolInformation[];
-    return ok(flat.map((s) => `${kindName(s.kind)} ${s.name}  (line ${s.location.range.start.line + 1})`).join("\n"));
+    return ok(
+      flat
+        .map((s) => `${kindName(s.kind)} ${s.name}  (line ${s.location.range.start.line + 1})`)
+        .join("\n"),
+    );
   } catch (e) {
     return fail(String((e as Error).message ?? e));
   }
@@ -398,7 +460,11 @@ const outline = defineTool({
     const list = files && files.length ? files : file ? [file] : [];
     if (!list.length) return fail("outline requires `file` or `files`");
     if (list.length === 1) return outlineOne(list[0]!, ctx);
-    return fanout(list, (f) => f, (f) => outlineOne(f, ctx));
+    return fanout(
+      list,
+      (f) => f,
+      (f) => outlineOne(f, ctx),
+    );
   },
 });
 
@@ -408,7 +474,9 @@ async function diagnosticsOne(file: string, minSev: number, ctx: ToolContext): P
     const { client, root } = await ctx.pool.forFile(filePath);
     const uri = await client.syncOpen(filePath);
     await waitForDiagnostics(() => client.diagnosticsFor(uri), 2000);
-    const diags = (client.diagnosticsFor(uri) ?? []).filter((d: Diagnostic) => (d.severity ?? 1) <= minSev);
+    const diags = (client.diagnosticsFor(uri) ?? []).filter(
+      (d: Diagnostic) => (d.severity ?? 1) <= minSev,
+    );
     if (!diags.length) return ok("no diagnostics");
     return ok(diags.map((d) => formatDiagnostic(d, uriToRel(uri, root))).join("\n"));
   } catch (e) {
@@ -418,17 +486,26 @@ async function diagnosticsOne(file: string, minSev: number, ctx: ToolContext): P
 
 const diagnostics = defineTool({
   name: "diagnostics",
-  description: "Type errors + warnings. Pass `file`, an array of `files`, or neither (aggregates across all open files).",
+  description:
+    "Type errors + warnings. Pass `file`, an array of `files`, or neither (aggregates across all open files).",
   inputSchema: {
     file: z.string().optional().describe("Single file path."),
     files: z.array(z.string()).optional().describe("Batch: list of files. Runs in parallel."),
-    severity: z.enum(["error", "warning", "info", "all"]).optional().describe("Default warning+error."),
+    severity: z
+      .enum(["error", "warning", "info", "all"])
+      .optional()
+      .describe("Default warning+error."),
   },
   handler: async ({ file, files, severity }, ctx) => {
     const minSev = severityFilter(severity ?? "warning");
     const list = files && files.length ? files : file ? [file] : [];
     if (list.length === 1) return diagnosticsOne(list[0]!, minSev, ctx);
-    if (list.length > 1) return fanout(list, (f) => f, (f) => diagnosticsOne(f, minSev, ctx));
+    if (list.length > 1)
+      return fanout(
+        list,
+        (f) => f,
+        (f) => diagnosticsOne(f, minSev, ctx),
+      );
     // No file given — aggregate across every open URI in every pool client.
     try {
       const lines: string[] = [];
@@ -448,7 +525,8 @@ const diagnostics = defineTool({
 
 const callHierarchy = defineTool({
   name: "call_hierarchy",
-  description: "Callers and/or callees of the function at a position. direction: incoming | outgoing | both (default both).",
+  description:
+    "Callers and/or callees of the function at a position. direction: incoming | outgoing | both (default both).",
   inputSchema: {
     ...locatorShape,
     direction: z.enum(["incoming", "outgoing", "both"]).optional().describe("Default both."),
@@ -465,17 +543,19 @@ const callHierarchy = defineTool({
       for (const item of items) {
         blocks.push(`# ${callItemHeader(item, root)}`);
         if (dir === "incoming" || dir === "both") {
-          const incoming = (await client.request<CallHierarchyIncomingCall[] | null>(
-            "callHierarchy/incomingCalls",
-            { item },
-          )) ?? [];
+          const incoming =
+            (await client.request<CallHierarchyIncomingCall[] | null>(
+              "callHierarchy/incomingCalls",
+              { item },
+            )) ?? [];
           blocks.push(`callers:\n${formatCallHierarchyIncoming(incoming, root)}`);
         }
         if (dir === "outgoing" || dir === "both") {
-          const outgoing = (await client.request<CallHierarchyOutgoingCall[] | null>(
-            "callHierarchy/outgoingCalls",
-            { item },
-          )) ?? [];
+          const outgoing =
+            (await client.request<CallHierarchyOutgoingCall[] | null>(
+              "callHierarchy/outgoingCalls",
+              { item },
+            )) ?? [];
           blocks.push(`callees:\n${formatCallHierarchyOutgoing(outgoing, root)}`);
         }
       }
@@ -491,18 +571,45 @@ function callItemHeader(item: CallHierarchyItem, root: string): string {
 
 const codeAction = defineTool({
   name: "code_action",
-  description: "List or apply code actions (quick fixes, refactors, organize-imports). `apply: N` applies an index from the most recent list — indices aren't stable across calls.",
+  description:
+    "List or apply code actions (quick fixes, refactors, organize-imports). `apply: N` applies an index from the most recent list — indices aren't stable across calls.",
   inputSchema: {
     file: z.string().describe("File path."),
-    line: z.number().int().nonnegative().optional().describe("Zero-based line. Omit for whole-file actions."),
+    line: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Zero-based line. Omit for whole-file actions."),
     character: z.number().int().nonnegative().optional().describe("Zero-based column."),
-    end_line: z.number().int().nonnegative().optional().describe("Zero-based end line. Defaults to line."),
-    end_character: z.number().int().nonnegative().optional().describe("Zero-based end column. Defaults to character."),
-    kind: z.string().optional().describe("Filter by action kind, e.g. source.organizeImports, quickfix."),
+    end_line: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Zero-based end line. Defaults to line."),
+    end_character: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Zero-based end column. Defaults to character."),
+    kind: z
+      .string()
+      .optional()
+      .describe("Filter by action kind, e.g. source.organizeImports, quickfix."),
     only_preferred: z.boolean().optional().describe("Only return preferred actions."),
-    apply: z.number().int().nonnegative().optional().describe("Index of an action to apply (writes to disk)."),
+    apply: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Index of an action to apply (writes to disk)."),
   },
-  handler: async ({ file, line, character, end_line, end_character, kind, only_preferred, apply }, ctx) => {
+  handler: async (
+    { file, line, character, end_line, end_character, kind, only_preferred, apply },
+    ctx,
+  ) => {
     try {
       const filePath = abs(file, ctx.cwd);
       const { client, root } = await ctx.pool.forFile(filePath);
@@ -514,19 +621,24 @@ const codeAction = defineTool({
       // Diagnostics arrive async after didOpen. Wait briefly so context-keyed
       // quick-fixes (which depend on overlapping diagnostics) are surfaced.
       await waitForDiagnostics(() => client.diagnosticsFor(uri), 2000);
-      const diags = (client.diagnosticsFor(uri) ?? []).filter((d) => overlaps(d.range, sl, sc, el, ec));
-      const result = (await client.request<(CodeAction & { command?: unknown })[] | null>(
-        "textDocument/codeAction",
-        {
-          textDocument: { uri },
-          range: { start: { line: sl, character: sc }, end: { line: el, character: ec } },
-          context: {
-            diagnostics: diags,
-            only: kind ? [kind] : undefined,
+      const diags = (client.diagnosticsFor(uri) ?? []).filter((d) =>
+        overlaps(d.range, sl, sc, el, ec),
+      );
+      const result =
+        (await client.request<(CodeAction & { command?: unknown })[] | null>(
+          "textDocument/codeAction",
+          {
+            textDocument: { uri },
+            range: { start: { line: sl, character: sc }, end: { line: el, character: ec } },
+            context: {
+              diagnostics: diags,
+              only: kind ? [kind] : undefined,
+            },
           },
-        },
-      )) ?? [];
-      let actions = result.filter((a) => typeof a === "object" && a !== null && "title" in a) as CodeAction[];
+        )) ?? [];
+      let actions = result.filter(
+        (a) => typeof a === "object" && a !== null && "title" in a,
+      ) as CodeAction[];
       if (only_preferred) actions = actions.filter((a) => a.isPreferred);
       if (apply !== undefined) {
         const target = actions[apply];
@@ -550,7 +662,9 @@ const codeAction = defineTool({
           // Command-based actions are server-defined; without executeCommand
           // support we can't run them in-process. Surface the command so the
           // caller can choose a different action.
-          return fail(`action "${resolved.title}" is command-driven (${resolved.command.command}); not yet supported`);
+          return fail(
+            `action "${resolved.title}" is command-driven (${resolved.command.command}); not yet supported`,
+          );
         }
         return fail(`action "${resolved.title}" has no edit attached after resolve`);
       }
@@ -561,7 +675,13 @@ const codeAction = defineTool({
   },
 });
 
-function overlaps(range: Diagnostic["range"], sl: number, sc: number, el: number, ec: number): boolean {
+function overlaps(
+  range: Diagnostic["range"],
+  sl: number,
+  sc: number,
+  el: number,
+  ec: number,
+): boolean {
   const aStart = range.start.line * 1e6 + range.start.character;
   const aEnd = range.end.line * 1e6 + range.end.character;
   const bStart = sl * 1e6 + sc;

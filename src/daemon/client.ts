@@ -174,4 +174,3 @@ function compareVersion(a: string, b: string): number {
   }
   return 0;
 }
-

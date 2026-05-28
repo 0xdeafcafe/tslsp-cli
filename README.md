@@ -47,20 +47,20 @@ In any TS/JS project with a `tsconfig.json`, the `tslsp` CLI is type-aware
 and MUST be used (via `Bash`) instead of the built-in text tools for the
 operations below. Text tools see strings; tslsp sees the program.
 
-| Task                            | DO use                          | DO NOT use                              |
-| ------------------------------- | ------------------------------- | --------------------------------------- |
-| Find every usage of a symbol    | `tslsp references --symbol N`   | `Grep`, `Glob`                          |
-| Search for a symbol by name     | `tslsp find-symbol NAME`        | `Grep`                                  |
-| Jump to a definition            | `tslsp definition --symbol N`   | `Grep` + `Read`                         |
-| Jump to a value's *type*        | `tslsp type-definition …`       | `Grep` + `Read`                         |
-| Find concrete implementations   | `tslsp implementation --symbol` | `Grep`                                  |
-| Rename a symbol                 | `tslsp rename … --new-name N`   | `Edit`, find-and-replace                |
-| Rename/move a file or folder    | `tslsp rename-file --from … --to …` | `mv` / `git mv` (won't update imports) |
-| Type / JSDoc for a symbol       | `tslsp hover --symbol NAME`     | `Read`                                  |
-| Outline a file before reading   | `tslsp outline --file FILE`     | `Read` on the whole file                |
-| Type errors after an edit       | `tslsp diagnostics --file F`    | `Bash` running `tsc` ad-hoc             |
-| Trace callers / callees         | `tslsp call-hierarchy --symbol` | repeated `references` calls             |
-| Organize imports / quick-fix    | `tslsp code-action …`           | manual edit                             |
+| Task                          | DO use                              | DO NOT use                             |
+| ----------------------------- | ----------------------------------- | -------------------------------------- |
+| Find every usage of a symbol  | `tslsp references --symbol N`       | `Grep`, `Glob`                         |
+| Search for a symbol by name   | `tslsp find-symbol NAME`            | `Grep`                                 |
+| Jump to a definition          | `tslsp definition --symbol N`       | `Grep` + `Read`                        |
+| Jump to a value's _type_      | `tslsp type-definition …`           | `Grep` + `Read`                        |
+| Find concrete implementations | `tslsp implementation --symbol`     | `Grep`                                 |
+| Rename a symbol               | `tslsp rename … --new-name N`       | `Edit`, find-and-replace               |
+| Rename/move a file or folder  | `tslsp rename-file --from … --to …` | `mv` / `git mv` (won't update imports) |
+| Type / JSDoc for a symbol     | `tslsp hover --symbol NAME`         | `Read`                                 |
+| Outline a file before reading | `tslsp outline --file FILE`         | `Read` on the whole file               |
+| Type errors after an edit     | `tslsp diagnostics --file F`        | `Bash` running `tsc` ad-hoc            |
+| Trace callers / callees       | `tslsp call-hierarchy --symbol`     | repeated `references` calls            |
+| Organize imports / quick-fix  | `tslsp code-action …`               | manual edit                            |
 
 Hard rules:
 
@@ -100,29 +100,35 @@ non-TS files (Markdown, YAML, configs), or projects without a `tsconfig.json`.
 
 ## tools
 
-| tool              | what it does                                                                                          |
-| ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `find_symbol`     | workspace symbol search by name. returns `path:line  kind name`.                                      |
-| `references`      | every reference to a symbol. takes a locator or a `symbols: [...]` batch.                             |
-| `definition`      | jump to where a symbol is defined. batches via `symbols`.                                             |
-| `type_definition` | jump to a value's *type* declaration (vs. its value declaration). batches via `symbols`.              |
-| `implementation`  | concrete implementations of an interface/abstract member. batches via `symbols`.                      |
-| `rename`          | type-aware rename across every file. `dry_run: true` previews without writing.                        |
-| `rename_file`     | move a file or folder; updates every import that referenced it. folders walked recursively.           |
-| `hover`           | type signature + JSDoc for a symbol. batches via `symbols`.                                           |
-| `outline`         | indented declaration outline. `files: [...]` batches.                                                 |
-| `diagnostics`     | type errors. `file`, `files: [...]`, or omit (aggregate across every open file).                      |
-| `call_hierarchy`  | callers and callees of a function. `direction: incoming` / `outgoing` / `both`.                       |
-| `code_action`     | list quick-fixes / refactors / organize-imports; pass `apply: N` to apply by index.                   |
+| tool              | what it does                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `find_symbol`     | workspace symbol search by name. returns `path:line  kind name`.                            |
+| `references`      | every reference to a symbol. takes a locator or a `symbols: [...]` batch.                   |
+| `definition`      | jump to where a symbol is defined. batches via `symbols`.                                   |
+| `type_definition` | jump to a value's _type_ declaration (vs. its value declaration). batches via `symbols`.    |
+| `implementation`  | concrete implementations of an interface/abstract member. batches via `symbols`.            |
+| `rename`          | type-aware rename across every file. `dry_run: true` previews without writing.              |
+| `rename_file`     | move a file or folder; updates every import that referenced it. folders walked recursively. |
+| `hover`           | type signature + JSDoc for a symbol. batches via `symbols`.                                 |
+| `outline`         | indented declaration outline. `files: [...]` batches.                                       |
+| `diagnostics`     | type errors. `file`, `files: [...]`, or omit (aggregate across every open file).            |
+| `call_hierarchy`  | callers and callees of a function. `direction: incoming` / `outgoing` / `both`.             |
+| `code_action`     | list quick-fixes / refactors / organize-imports; pass `apply: N` to apply by index.         |
 
 ### symbol locator
 
 every position-taking tool takes one of three shapes, in priority order:
 
 ```js
-{ file, line, character }   // explicit LSP position
-{ file, line, symbol }      // server scans the line for the identifier
-{ symbol }                  // workspace symbol search; errors with candidates if ambiguous
+{
+  (file, line, character);
+} // explicit LSP position
+{
+  (file, line, symbol);
+} // server scans the line for the identifier
+{
+  symbol;
+} // workspace symbol search; errors with candidates if ambiguous
 ```
 
 LLMs know line numbers and symbol names but not character columns. modes 2 and 3 cover the gap.

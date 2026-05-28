@@ -5,11 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import {
-  DaemonVersionMismatch,
-  ensureDaemon,
-  sendRequest,
-} from "../src/daemon/client.js";
+import { DaemonVersionMismatch, ensureDaemon, sendRequest } from "../src/daemon/client.js";
 import {
   baseDaemonDir,
   readSession,
@@ -61,14 +57,21 @@ afterEach(async () => {
 
 function freshWorkspace(): string {
   const dir = mkdtempSync(resolve(tmpdir(), "tslsp-daemon-ws-"));
-  writeFileSync(resolve(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "es2022" } }));
+  writeFileSync(
+    resolve(dir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: { target: "es2022" } }),
+  );
   return dir;
 }
 
 describe("daemon", () => {
   it("autospawns on ensureDaemon and serves ping", async () => {
     workspace = freshWorkspace();
-    const session = await ensureDaemon({ workspaceDir: workspace, sessionName: "default", version: "0.1.0" });
+    const session = await ensureDaemon({
+      workspaceDir: workspace,
+      sessionName: "default",
+      version: "0.1.0",
+    });
     expect(session.socketPath).toContain(cacheDir);
     expect(session.pid).toBeGreaterThan(0);
     expect(existsSync(session.socketPath)).toBe(true);
@@ -91,7 +94,11 @@ describe("daemon", () => {
       createdAt: 0,
     });
 
-    const session = await ensureDaemon({ workspaceDir: workspace, sessionName: "default", version: "0.1.0" });
+    const session = await ensureDaemon({
+      workspaceDir: workspace,
+      sessionName: "default",
+      version: "0.1.0",
+    });
     // The pid in the rewritten .session should be the real (live) daemon, not our planted one.
     expect(session.pid).not.toBe(999999);
 
@@ -101,7 +108,11 @@ describe("daemon", () => {
 
   it("stops on `stop` request and deletes the .session", async () => {
     workspace = freshWorkspace();
-    const session = await ensureDaemon({ workspaceDir: workspace, sessionName: "default", version: "0.1.0" });
+    const session = await ensureDaemon({
+      workspaceDir: workspace,
+      sessionName: "default",
+      version: "0.1.0",
+    });
 
     const stopResp = await sendRequest(session, { method: "stop", params: {} });
     expect(stopResp).toEqual({ ok: true, text: "stopping" });
@@ -124,7 +135,11 @@ describe("daemon", () => {
     const prev = process.env.TSLSP_DAEMON_IDLE_MS;
     process.env.TSLSP_DAEMON_IDLE_MS = "1500";
     try {
-      const session = await ensureDaemon({ workspaceDir: workspace, sessionName: "default", version: "0.1.0" });
+      const session = await ensureDaemon({
+        workspaceDir: workspace,
+        sessionName: "default",
+        version: "0.1.0",
+      });
 
       // Reaper interval = max(1s, idle/4). Wait > idle + one tick.
       await new Promise((r) => setTimeout(r, 3000));

@@ -1,10 +1,5 @@
 import { canConnect, ensureDaemon, sendRequest } from "./client.js";
-import {
-  deleteSession,
-  listAllSessions,
-  readSession,
-  SessionFile,
-} from "./registry.js";
+import { deleteSession, listAllSessions, readSession, SessionFile } from "./registry.js";
 
 /**
  * Daemon-management helpers used by the `start`/`stop`/`restart`/`list`/
@@ -82,9 +77,7 @@ export interface LiveDaemon extends SessionFile {
 
 export async function listLiveDaemons(): Promise<LiveDaemon[]> {
   const all = await listAllSessions();
-  return Promise.all(
-    all.map(async (s) => ({ ...s, alive: await canConnect(s.socketPath) })),
-  );
+  return Promise.all(all.map(async (s) => ({ ...s, alive: await canConnect(s.socketPath) })));
 }
 
 export interface KillAllResult {

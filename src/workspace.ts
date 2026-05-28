@@ -33,7 +33,15 @@ export function resolveTsgoBin(rootPath: string): string {
     if (existsSync(candidate)) return candidate;
   }
   const here = fileURLToPath(new URL(".", import.meta.url));
-  const bundled = join(here, "..", "node_modules", "@typescript", "native-preview", "bin", "tsgo.js");
+  const bundled = join(
+    here,
+    "..",
+    "node_modules",
+    "@typescript",
+    "native-preview",
+    "bin",
+    "tsgo.js",
+  );
   if (existsSync(bundled)) return bundled;
   throw new Error(
     `Could not find tsgo. Install @typescript/native-preview in your workspace or in tslsp's deps.`,
