@@ -157,8 +157,7 @@ export async function sendRequest(
 
 /**
  * Locate the bin entry that re-invokes us in daemon-serve mode. The `tslsp`
- * CLI lives at dist/cli.js (dist/index.js is the legacy MCP-only bin). In
- * tests that need to point elsewhere, override via TSLSP_DAEMON_ENTRY.
+ * CLI lives at dist/cli.js. Tests can override via TSLSP_DAEMON_ENTRY.
  */
 function daemonEntryPoint(): string {
   if (process.env.TSLSP_DAEMON_ENTRY) return process.env.TSLSP_DAEMON_ENTRY;

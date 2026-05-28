@@ -14,7 +14,7 @@ import { installSkills } from "./skill-install.js";
 import { TOOLS, getTool, ToolDef } from "./tools.js";
 import { findProjectRoot, LspPool } from "./workspace.js";
 
-const VERBOSE_ENV = process.env.TSLSP_VERBOSE === "1" || process.env.TSLSP_MCP_VERBOSE === "1";
+const VERBOSE_ENV = process.env.TSLSP_VERBOSE === "1";
 
 export async function runCli(argv: string[]): Promise<number> {
   const args = [...argv];
@@ -108,8 +108,8 @@ async function runTool(tool: ToolDef, argv: string[], opts: RunToolOpts = {}): P
     return emitError(opts.useJson, (e as Error).message, 2, toolHelp(tool));
   }
 
-  // Validate against the tool's zod schema so CLI users get the same
-  // constraint checks as historic MCP clients did (e.g. `.min(1)`,
+  // Validate against the tool's zod schema so CLI flag parsing inherits
+  // the same constraint checks the handlers expect (e.g. `.min(1)`,
   // `.positive()`, `.max(200)`).
   let validated: Record<string, unknown>;
   try {

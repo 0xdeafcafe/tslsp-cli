@@ -35,7 +35,7 @@ export interface ToolResult {
 
 export interface ToolDef<I extends z.ZodRawShape = z.ZodRawShape> {
   name: string;
-  /** One-line MCP description. Keep tight; the CLI uses the same text. */
+  /** One-line description. Keep tight; surfaced as the CLI command help. */
   description: string;
   /** Per-tool zod shape. Field descriptions double as CLI flag help. */
   inputSchema: I;

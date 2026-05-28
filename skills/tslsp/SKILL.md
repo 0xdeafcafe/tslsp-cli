@@ -1,108 +1,125 @@
 ---
 name: tslsp
-description: Type-aware TypeScript/JavaScript code intelligence — references, rename, file/folder rename, symbols, diagnostics, call hierarchy, code actions — via tsgo (Microsoft's native TypeScript language server). Use instead of grep/edit/mv for symbol-aware tasks.
+description: Use for ANY TypeScript/JavaScript symbol-level work in a project with a tsconfig.json — find usages, jump to definition, rename a symbol, move or rename a file (rewrites imports), get type/JSDoc, outline a file, check type errors, organize imports, find implementations, trace call hierarchy. Replaces Grep, Edit, MultiEdit, mv, git mv, and ad-hoc tsc invocations on TS/JS code. Type-aware via tsgo (Microsoft's native TypeScript language server).
 allowed-tools: Bash(tslsp:*), Bash(npx:*)
 ---
 
-# tslsp — TypeScript code intelligence
+# tslsp — TypeScript code intelligence (CLI)
 
-In any TypeScript/JavaScript project with a `tsconfig.json`, prefer `tslsp` over text tools (`Grep`, `Edit`, `MultiEdit`, `mv`) for symbol-aware work. It talks to the TypeScript language server, so it sees the program, not strings.
+You are working in a project that has a `tsconfig.json`. For anything that touches a TypeScript identifier — find it, follow it, rename it, move the file it lives in, check whether your edit broke its type — use the `tslsp` CLI via `Bash`. It talks to the TypeScript language server, so it sees the _program_, not strings.
 
-If the global `tslsp` binary is missing, fall back to `npx --no-install @0xdeafcafe/tslsp-cli tslsp …`.
+## STOP. These reflexes are wrong for TypeScript code.
 
-## When to use
+| You're about to…                      | Why that's broken                                                                                    | What to type instead                                      |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `Grep` for a symbol name              | Matches the name in comments, in `.md`, in unrelated identifiers, in string literals. Silently lies. | `tslsp references --symbol NAME`                          |
+| `Edit` / `MultiEdit` to rename        | Misses one import; production breaks. Catastrophic for common names (`User`, `get`, `value`, `id`).  | `tslsp rename --symbol OLD --new-name NEW`                |
+| `mv` / `git mv` a `.ts` / `.tsx` file | Every `import` that pointed at the old path still does. TypeScript doesn't re-resolve on move.       | `tslsp rename-file OLD-PATH NEW-PATH`                     |
+| `Read` a large file to "look around"  | Wastes tokens; you need the structure, not the body.                                                 | `tslsp outline FILE` → `Read` only the line range         |
+| `Bash` running `tsc` to check errors  | Re-spawns the type-checker, slow, no incremental cache.                                              | `tslsp diagnostics --file FILE`                           |
+| `Grep` to find a definition           | Same as above, plus you get the import line, not the declaration.                                    | `tslsp definition --symbol NAME`                          |
+| `Grep` to find implementations        | Misses anything that isn't a literal `implements X` match.                                           | `tslsp implementation --symbol NAME`                      |
+| Read N call sites to trace callers    | Tedious and incomplete.                                                                              | `tslsp call-hierarchy --symbol NAME --direction incoming` |
 
-| task                             | use                     | not                                   |
-| -------------------------------- | ----------------------- | ------------------------------------- |
-| find usages of a symbol          | `tslsp references`      | `grep`                                |
-| search workspace for a symbol    | `tslsp find-symbol`     | `grep`                                |
-| jump to a definition             | `tslsp definition`      | `grep` + `read`                       |
-| jump to a value's _type_         | `tslsp type-definition` | `grep` + `read`                       |
-| find concrete implementations    | `tslsp implementation`  | `grep`                                |
-| rename a symbol                  | `tslsp rename`          | `edit`/`multi-edit`/find-and-replace  |
-| **move/rename a file or folder** | `tslsp rename-file`     | `mv` / `git mv` (breaks every import) |
-| type/JSDoc for a symbol          | `tslsp hover`           | `read`                                |
-| outline a file before reading    | `tslsp outline`         | full `read`                           |
-| type errors after an edit        | `tslsp diagnostics`     | ad-hoc `tsc`                          |
-| trace callers / callees          | `tslsp call-hierarchy`  | repeated `references`                 |
-| organize-imports / quick-fixes   | `tslsp code-action`     | manual edit                           |
+These are HARD rules. They apply to _every_ identifier — including slice keys (`features.fooUi`), property names, enum members, type aliases, parameter names. "Just a couple of files" is how you ship a broken rename.
 
-## Locator forms
-
-Every position-taking command accepts one of:
-
-```
---file F --line N --character C            # explicit LSP position
---file F --line N --symbol NAME            # scan line N for NAME
---symbol NAME                              # workspace symbol search
-```
-
-LLMs know lines and names but not columns — use `--symbol`. Ambiguous name-only queries return candidates; pick by file/line and re-run.
-
-## Batch inputs
-
-Most read-only commands accept array inputs that run in parallel. One call beats N round-trips.
+## What to type — copy these patterns
 
 ```bash
-tslsp hover     --symbols User,Repository,AuthService     # comma-separated
-tslsp outline   src/api.ts src/db.ts src/cache.ts         # multi-positional
-tslsp diagnostics --files src/a.ts,src/b.ts,src/c.ts
-tslsp references --symbols add,sum,double
-```
+# find every usage of User across the workspace
+tslsp references --symbol User
 
-Output is labeled with `=== <name> ===` per block.
+# jump to where User is defined
+tslsp definition --symbol User
 
-## Commands
+# rename — ALWAYS --dry-run first when call sites are likely many
+tslsp rename --symbol User --new-name Account --dry-run
+tslsp rename --symbol User --new-name Account
 
-```bash
-# symbols
-tslsp find-symbol User                          # positional == --query
-tslsp find-symbol User --file src/api.ts --limit 20
+# move a file (folders work too) — rewrites every import that pointed at it
+tslsp rename-file src/old/User.ts src/users/User.ts --dry-run
+tslsp rename-file src/old/User.ts src/users/User.ts
 
-# navigation
-tslsp definition       --symbol User
-tslsp type-definition  --file src/x.ts --line 12 --symbol value
-tslsp implementation   --symbol IGreeter
-tslsp references       --symbol User --include-declaration false
+# what does this file contain? — outline instead of reading
+tslsp outline src/api.ts
 
-# read what something is
-tslsp hover    --symbol User
-tslsp outline  src/api.ts                       # positional == --file
+# what's the type / JSDoc for this symbol?
+tslsp hover --symbol User
 
-# refactor
-tslsp rename       --symbol oldName --new-name newName --dry-run
-tslsp rename       --symbol oldName --new-name newName
-tslsp rename-file  src/old.ts src/new.ts --dry-run
-tslsp rename-file  src/old.ts src/new.ts
-tslsp rename-file  src/components src/widgets   # folders supported
+# did my edit type-check?
+tslsp diagnostics --file src/api.ts
 
-# correctness
-tslsp diagnostics --file src/x.ts
-tslsp diagnostics --severity error
-
-# call graph
+# trace callers / callees
 tslsp call-hierarchy --symbol handleRequest --direction incoming
 tslsp call-hierarchy --symbol handleRequest --direction outgoing
-tslsp call-hierarchy --symbol handleRequest                    # both
 
-# quick-fixes / organize-imports
+# find implementations of an interface / abstract method
+tslsp implementation --symbol IGreeter
+
+# organize imports / apply quick-fixes
 tslsp code-action --file src/x.ts --kind source.organizeImports
-tslsp code-action --file src/x.ts --line 12 --character 4
 tslsp code-action --file src/x.ts --kind source.organizeImports --apply 0
 ```
 
-## Hard rules
+Every command takes `--help`. Output is line-oriented: `path:line[:col]  kind name`.
 
-1. **NEVER rename a TypeScript identifier with `Edit` or `MultiEdit`.** Use `tslsp rename`. Pass `--dry-run` first when the symbol has many call sites; review the preview, then apply. This applies to _every_ identifier — slice keys (`features.fooUi`), property names, enum members, the lot. If you find yourself string-editing a symbol "just for a couple of files" you have already failed the rule. For bulk renames (e.g., renaming a whole feature), enumerate symbols via `tslsp outline` on each file in the folder first, then call `tslsp rename` once per symbol — ~5× cheaper in tokens than grep+Read+Edit and safer (no false positives in comments / strings / unrelated identifiers).
-2. **NEVER `mv` or `git mv` a TypeScript file or folder.** Use `tslsp rename-file` — it walks every `import` that references it and rewrites them. After the move you can still use `tslsp rename` for any identifier inside the file; combine the two passes. Folders are supported and traversed recursively.
-3. **NEVER `grep` for a symbol name to find usages or definitions.** Use `tslsp references` / `tslsp definition`. Grep matches strings in comments, in unrelated identifiers, in `.md` files — it lies.
-4. **Before reading a large file, call `tslsp outline` first** and use the line numbers to `read` only the slices you need. Do not page through 100s of lines hunting for a function.
-5. **After non-trivial edits to a TS file, call `tslsp diagnostics`** to confirm it still type-checks before claiming done.
+## Locator forms — pick the cheapest you can
 
-## Output
+When a command takes a position (`references`, `definition`, `rename`, `hover`, `type-definition`, `implementation`, `call-hierarchy`, `code-action`):
 
-Output is line-oriented and minimal: one match per line, `path:line[:col]  kind name`. Designed to fit a small context. Pass `--limit N` to cap reference/symbol lists. Batch results are labeled with `=== <name> ===` per block.
+```
+--symbol NAME                              # workspace search by name
+--file F --line L --symbol NAME            # scan line L of F for NAME
+--file F --line L --character C            # exact zero-based LSP position
+```
 
-## Fallback
+You almost always know the name; you almost never know the column. Prefer `--symbol NAME` first; fall back to `--file --line --symbol` when the name is ambiguous. Ambiguous `--symbol` exits with code `2` and prints candidates — read them, pick by file/line, re-call.
 
-Use the built-in text tools only for: string literals, comments, non-TS files (Markdown, YAML, configs), or projects without a `tsconfig.json`.
+## Batch when you can
+
+Most read-only commands accept array inputs that run in parallel. One call beats N round-trips on tokens and latency:
+
+```bash
+tslsp hover       --symbols User,Account,Session
+tslsp outline     src/api.ts src/db.ts src/cache.ts
+tslsp diagnostics --files src/a.ts,src/b.ts,src/c.ts
+tslsp references  --symbols add,sum,double
+```
+
+Output is labeled `=== NAME ===` per block.
+
+## Verification ritual — after every non-trivial edit
+
+```bash
+tslsp diagnostics --file <the file you touched>
+```
+
+Run it before you say "done". Code that compiles in your head doesn't always compile in TypeScript, and a missed export / wrong arity / stale signature is exactly what diagnostics catches.
+
+## Speed: `--daemon` for tight refactor loops
+
+The default CLI spawns a fresh tsgo per call (~200ms–2s on real projects). For a refactor with many calls in a row, add `--daemon` to route through a warm per-workspace daemon (autospawned on first call, idle-reaps after 30 min):
+
+```bash
+tslsp --daemon references --symbol User
+tslsp --daemon rename --symbol User --new-name Account
+```
+
+Other helpers: `tslsp daemon list` (running daemons), `tslsp daemon stop` (this workspace), `tslsp daemon restart` (after upgrading the package).
+
+## Fallback to text tools — narrowly
+
+Use `Grep` / `Edit` / `Read` / `mv` for:
+
+- String literals (searching for an error-message string in code)
+- Comments and docs (`.md`, `.txt`)
+- Configuration files that aren't TS (`.yaml`, plain `.json`)
+- Projects with **no** `tsconfig.json`
+
+If the thing you're acting on is an identifier in a TS/JS file under a `tsconfig.json`, **tslsp**. No exceptions for "small changes" or "I already know where it is" — those are the cases the type-aware tool exists for.
+
+## If `tslsp` isn't on PATH
+
+```bash
+npx --no-install @0xdeafcafe/tslsp-cli tslsp <command> [...]
+```
