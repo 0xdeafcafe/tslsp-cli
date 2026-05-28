@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,10 +21,17 @@ const cliBin = resolve(projectRoot, "dist", "cli.js");
 let workspace: string;
 let cacheDir: string;
 
+// Snapshot env we plan to mutate so other test files run after us don't
+// inherit our overrides (vitest's default fork pool shares workers).
+const envSnapshot: Record<string, string | undefined> = {};
+
 beforeAll(() => {
   if (!existsSync(cliBin)) {
     const build = spawnSync("pnpm", ["run", "build"], { cwd: projectRoot, stdio: "inherit" });
     if (build.status !== 0) throw new Error("pnpm run build failed");
+  }
+  for (const key of ["TSLSP_DAEMON_DIR", "TSLSP_DAEMON_ENTRY", "TSLSP_DAEMON_IDLE_MS"]) {
+    envSnapshot[key] = process.env[key];
   }
   cacheDir = mkdtempSync(resolve(tmpdir(), "tslsp-daemon-test-"));
   process.env.TSLSP_DAEMON_DIR = cacheDir;
@@ -32,6 +39,14 @@ beforeAll(() => {
   // Long enough that ordinary tests never trip the idle reaper. The idle-exit
   // test overrides this with a shorter window when it spawns its own daemon.
   process.env.TSLSP_DAEMON_IDLE_MS = "30000";
+});
+
+afterAll(async () => {
+  for (const [key, value] of Object.entries(envSnapshot)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  await fs.rm(cacheDir, { recursive: true, force: true }).catch(() => {});
 });
 
 afterEach(async () => {
@@ -128,6 +143,26 @@ describe("daemon", () => {
     }
     expect(() => process.kill(session.pid, 0)).toThrow();
     expect(existsSync(sessionFilePath(workspace, "default"))).toBe(false);
+    expect(existsSync(session.socketPath)).toBe(false);
+  });
+
+  it("bails with a friendly error when the socket path would exceed the OS limit", async () => {
+    // Build a TSLSP_DAEMON_DIR that, plus the workspace hash + session name +
+    // .sock, will overflow macOS's 104-byte cap. We override just for the
+    // spawn and restore after.
+    const longCache = mkdtempSync(resolve(tmpdir(), "tslsp-long-" + "x".repeat(80)));
+    const prev = process.env.TSLSP_DAEMON_DIR;
+    process.env.TSLSP_DAEMON_DIR = longCache;
+    try {
+      workspace = freshWorkspace();
+      await expect(
+        ensureDaemon({ workspaceDir: workspace, sessionName: "default", version: "0.1.0" }),
+      ).rejects.toThrow(/socket path exceeds/);
+    } finally {
+      if (prev === undefined) delete process.env.TSLSP_DAEMON_DIR;
+      else process.env.TSLSP_DAEMON_DIR = prev;
+      await fs.rm(longCache, { recursive: true, force: true }).catch(() => {});
+    }
   });
 
   it("self-exits after idle timeout", async () => {

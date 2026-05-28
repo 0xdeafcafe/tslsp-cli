@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "autospawn",
+    "autospawns",
+    "autospawned",
+    "callees",
+    "claudus",
+    "deafcafe",
+    "ENAMETOOLONG",
+    "EADDRINUSE",
+    "ECONNREFUSED",
+    "endsWith",
+    "lightyear",
+    "LOCALAPPDATA",
+    "modelcontextprotocol",
+    "ndjson",
+    "oxfmt",
+    "oxlint",
+    "reprojects",
+    "tsgo",
+    "tsgos",
+    "tslsp",
+    "TSGO",
+    "TSLSP",
+    "tsserver",
+    "vitest"
+  ],
+  "ignorePaths": ["node_modules", "dist", "pnpm-lock.yaml", "CHANGELOG.md", "*.svg"]
+}

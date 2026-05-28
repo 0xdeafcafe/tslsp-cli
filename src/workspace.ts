@@ -72,6 +72,24 @@ export interface LspPoolOptions {
 
 const DEFAULT_TSGO_IDLE_MS = 10 * 60 * 1000;
 
+/**
+ * Parse a non-negative integer env var, falling back to a default with a
+ * stderr warning on garbage. Setting `setInterval(_, NaN)` in Node coerces
+ * to 1ms — a tight reaper loop. Don't do that.
+ */
+export function envIdleMs(name: string, defaultMs: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultMs;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) {
+    process.stderr.write(
+      `tslsp: ignoring invalid ${name}=${JSON.stringify(raw)}; using default ${defaultMs}ms\n`,
+    );
+    return defaultMs;
+  }
+  return n;
+}
+
 export class LspPool {
   private clients = new Map<string, LspClient>();
   private lastUsed = new Map<string, number>();
@@ -83,9 +101,7 @@ export class LspPool {
     const opts: LspPoolOptions =
       typeof optsOrLog === "function" ? { log: optsOrLog } : (optsOrLog ?? {});
     this.log = opts.log;
-    this.tsgoIdleMs =
-      opts.tsgoIdleMs ??
-      parseInt(process.env.TSLSP_TSGO_IDLE_MS ?? String(DEFAULT_TSGO_IDLE_MS), 10);
+    this.tsgoIdleMs = opts.tsgoIdleMs ?? envIdleMs("TSLSP_TSGO_IDLE_MS", DEFAULT_TSGO_IDLE_MS);
     if (this.tsgoIdleMs > 0) {
       // Check 4× per idle window, capped at every 30s.
       const interval = Math.min(30_000, Math.max(1_000, Math.floor(this.tsgoIdleMs / 4)));

@@ -14,7 +14,7 @@ import { installSkills } from "./skill-install.js";
 import { TOOLS, getTool, ToolDef } from "./tools.js";
 import { findProjectRoot, LspPool } from "./workspace.js";
 
-const VERBOSE = process.env.TSLSP_VERBOSE === "1" || process.env.TSLSP_MCP_VERBOSE === "1";
+const VERBOSE_ENV = process.env.TSLSP_VERBOSE === "1" || process.env.TSLSP_MCP_VERBOSE === "1";
 
 export async function runCli(argv: string[]): Promise<number> {
   const args = [...argv];
@@ -32,6 +32,7 @@ export async function runCli(argv: string[]): Promise<number> {
   // documentation.
   const useDaemon = takeFlag(args, "--daemon");
   const useJson = takeFlag(args, "--json");
+  const useVerbose = takeFlag(args, "--verbose") || VERBOSE_ENV;
   const sessionName = takeValue(args, "--session") ?? "default";
 
   const cmd = args.shift()!;
@@ -51,7 +52,7 @@ export async function runCli(argv: string[]): Promise<number> {
     process.stderr.write(`unknown command: ${cmd}\n\n${rootHelp()}\n`);
     return 2;
   }
-  return runTool(tool, args, { useDaemon, useJson, sessionName });
+  return runTool(tool, args, { useDaemon, useJson, useVerbose, sessionName });
 }
 
 /** Strip and report a boolean flag (e.g. `--daemon`). */
@@ -91,6 +92,7 @@ async function runInstall(argv: string[]): Promise<number> {
 interface RunToolOpts {
   useDaemon?: boolean;
   useJson?: boolean;
+  useVerbose?: boolean;
   sessionName?: string;
 }
 
@@ -122,7 +124,7 @@ async function runTool(tool: ToolDef, argv: string[], opts: RunToolOpts = {}): P
     return runToolViaDaemon(tool, validated, opts);
   }
 
-  const log = VERBOSE ? (line: string) => process.stderr.write(line + "\n") : undefined;
+  const log = opts.useVerbose ? (line: string) => process.stderr.write(line + "\n") : undefined;
   const pool = new LspPool(log);
   try {
     const out = await tool.handler(validated as any, { pool, cwd: process.cwd() });
@@ -289,7 +291,8 @@ function daemonHelp(): string {
     "  kill-all           SIGKILL every daemon (escape hatch)",
     "",
     "flags:",
-    '  --session NAME     named session (default: "default")',
+    '  --session NAME     named session for start/stop/restart (default: "default")',
+    "                     ignored by `list` and `kill-all`, which are workspace-agnostic",
   ].join("\n");
 }
 
@@ -312,6 +315,7 @@ export function rootHelp(): string {
     "  tslsp <command> [args]",
     "  tslsp --daemon <command> [args] route through a warm per-workspace daemon",
     "  tslsp --json <command> [args]   emit a JSON envelope on stdout",
+    "  tslsp --verbose <command>       forward tsgo stderr (non-daemon path)",
     '  tslsp --session NAME <command>  pick a named daemon session (default: "default")',
     "  tslsp daemon <start|stop|restart|list|kill-all>",
     "  tslsp install --skills [--project] [--force]",
@@ -325,6 +329,10 @@ export function rootHelp(): string {
   }
   lines.push("");
   lines.push("global flags:");
+  lines.push("  --daemon       route through warm per-workspace daemon");
+  lines.push("  --json         emit JSON envelope ({ok,text,exitCode|error}) on stdout");
+  lines.push("  --verbose      forward tsgo stderr (non-daemon; for daemon use env)");
+  lines.push('  --session NAME named daemon session (default: "default")');
   lines.push("  --help, -h     show this message");
   lines.push("  --version, -v  print version");
   lines.push("");

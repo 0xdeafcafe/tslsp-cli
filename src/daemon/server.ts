@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { createServer, Server, Socket } from "node:net";
 import { z } from "zod";
 import { getTool, ToolResult } from "../tools.js";
-import { LspPool } from "../workspace.js";
+import { envIdleMs, LspPool } from "../workspace.js";
 import { deleteSession, ensureProfilesDir, socketPathFor, writeSession } from "./registry.js";
 import type { Request, Response, RunParams } from "./protocol.js";
 
@@ -24,8 +24,7 @@ const DEFAULT_IDLE_MS = 30 * 60 * 1000;
  * In tests we drive it directly and listen for the ready handshake.
  */
 export async function serve(opts: ServerOptions): Promise<void> {
-  const idleMs =
-    opts.idleTimeoutMs ?? parseInt(process.env.TSLSP_DAEMON_IDLE_MS ?? String(DEFAULT_IDLE_MS), 10);
+  const idleMs = opts.idleTimeoutMs ?? envIdleMs("TSLSP_DAEMON_IDLE_MS", DEFAULT_IDLE_MS);
   const readyStream = opts.readyStream ?? process.stdout;
   const socketPath = socketPathFor(opts.workspaceDir, opts.sessionName);
   // macOS caps AF_UNIX paths at 104 bytes (Linux 108). Bind() would fail with
@@ -192,10 +191,10 @@ async function dispatchRun(
   pool: LspPool,
   params: RunParams,
 ): Promise<ToolResult & { exitCode?: number }> {
-  // Tool names use snake_case in the registry but CLI calls them in their
-  // registry name (the CLI's renderer flips _ → -). Accept either spelling.
-  const cmd = params.cmd.replace(/-/g, "_");
-  const tool = getTool(cmd);
+  // Registry names are snake_case; clients should normally send the literal
+  // name, but the CLI's help renderer shows kebab-case, so accept either.
+  // Try literal first so a future tool with `-` in its name isn't mangled.
+  const tool = getTool(params.cmd) ?? getTool(params.cmd.replace(/-/g, "_"));
   if (!tool) {
     return { text: `unknown cmd: ${params.cmd}`, isError: true, exitCode: 1 };
   }
