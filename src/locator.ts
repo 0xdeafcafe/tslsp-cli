@@ -24,7 +24,10 @@ export interface ResolvedPosition {
 }
 
 export class LocatorError extends Error {
-  constructor(message: string, public readonly candidates?: SymbolInformation[]) {
+  constructor(
+    message: string,
+    public readonly candidates?: SymbolInformation[],
+  ) {
     super(message);
   }
 }
@@ -69,7 +72,9 @@ export async function resolveLocator(
     const re = new RegExp(`\\b${escapeRegex(loc.symbol)}\\b`);
     const m = re.exec(lineText);
     if (!m) {
-      throw new LocatorError(`symbol "${loc.symbol}" not found on line ${loc.line} of ${relPath(filePath, root)}`);
+      throw new LocatorError(
+        `symbol "${loc.symbol}" not found on line ${loc.line} of ${relPath(filePath, root)}`,
+      );
     }
     return { client, root, filePath, uri, position: { line: loc.line, character: m.index } };
   }
@@ -81,7 +86,11 @@ export async function resolveLocator(
       ? await pool.forFile(cwdRoot)
       : { client: await pool.forRoot(findRootOrThrow(cwd)), root: findRootOrThrow(cwd) };
     if (loc.file) await client.syncOpen(cwdRoot);
-    const matches = await querySymbol(client, loc.symbol, loc.file ? abs(loc.file, cwd) : undefined);
+    const matches = await querySymbol(
+      client,
+      loc.symbol,
+      loc.file ? abs(loc.file, cwd) : undefined,
+    );
     if (matches.length === 0) {
       const where = loc.file ? ` in ${loc.file}` : "";
       throw new LocatorError(`no workspace symbol matches "${loc.symbol}"${where}`);
@@ -113,7 +122,8 @@ async function querySymbol(
   query: string,
   fileFilter?: string,
 ): Promise<SymbolInformation[]> {
-  const results = (await client.request<SymbolInformation[] | null>("workspace/symbol", { query })) ?? [];
+  const results =
+    (await client.request<SymbolInformation[] | null>("workspace/symbol", { query })) ?? [];
   // workspace/symbol does substring/fuzzy. Tighten to exact-name matches first.
   const exact = results.filter((s) => s.name === query);
   const pool = exact.length ? exact : results;

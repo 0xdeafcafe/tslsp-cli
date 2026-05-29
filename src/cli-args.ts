@@ -1,7 +1,13 @@
 import { z } from "zod";
 import type { ToolDef } from "./tools.js";
 
-const WRAPPER_NAMES = new Set(["ZodOptional", "ZodNullable", "ZodDefault", "ZodReadonly", "ZodCatch"]);
+const WRAPPER_NAMES = new Set([
+  "ZodOptional",
+  "ZodNullable",
+  "ZodDefault",
+  "ZodReadonly",
+  "ZodCatch",
+]);
 
 /** Peel optional-like wrappers. Stops at the first concrete type — important
  * because zod 4's `ZodArray.unwrap()` returns the element, not itself. */
@@ -36,9 +42,11 @@ export function enumValues(ty: z.ZodTypeAny): string[] {
   const root = unwrap(ty) as any;
   const v = root._def?.values ?? root.options ?? root.enum;
   if (Array.isArray(v)) return v;
-  if (v && typeof v === "object") return Object.values(v).filter((x): x is string => typeof x === "string");
+  if (v && typeof v === "object")
+    return Object.values(v).filter((x): x is string => typeof x === "string");
   const entries = root.def?.entries;
-  if (entries && typeof entries === "object") return Object.values(entries).filter((x): x is string => typeof x === "string");
+  if (entries && typeof entries === "object")
+    return Object.values(entries).filter((x): x is string => typeof x === "string");
   return [];
 }
 
@@ -101,7 +109,10 @@ export function parseArgs(tool: ToolDef, argv: string[]): Record<string, unknown
       const value = inline ?? argv[++i];
       if (value === undefined) throw new Error(`--${flag.replace(/_/g, "-")} requires a value`);
       if (isArray(ty)) {
-        const parts = value.split(",").map((s) => s.trim()).filter(Boolean);
+        const parts = value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
         const prev = (out[flag] as unknown[] | undefined) ?? [];
         out[flag] = [...prev, ...parts.map((p) => coerce(arrayInner(ty), p))];
       } else {

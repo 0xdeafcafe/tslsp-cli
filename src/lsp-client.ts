@@ -129,7 +129,9 @@ export class LspClient {
       cwd: opts.rootPath,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    this.proc.stderr?.on("data", (d: Buffer) => this.log(`[tsgo stderr] ${d.toString().trimEnd()}`));
+    this.proc.stderr?.on("data", (d: Buffer) =>
+      this.log(`[tsgo stderr] ${d.toString().trimEnd()}`),
+    );
     this.proc.stdout?.on("data", (chunk: Buffer) => this.onStdout(chunk));
     this.proc.on("exit", (code) => {
       this.closed = true;
@@ -327,15 +329,14 @@ export class LspClient {
    */
   async filesChangedOnDisk(filePaths: string[]): Promise<void> {
     // Read all file content + stats up-front so the send loop doesn't yield.
-    const items = await Promise.all(filePaths.map(async (filePath) => {
-      const uri = pathToFileURL(filePath).toString();
-      const cur = this.opened.get(uri);
-      const [text, st] = await Promise.all([
-        readFile(filePath, "utf8"),
-        stat(filePath),
-      ]);
-      return { filePath, uri, cur, text, mtimeMs: st.mtimeMs };
-    }));
+    const items = await Promise.all(
+      filePaths.map(async (filePath) => {
+        const uri = pathToFileURL(filePath).toString();
+        const cur = this.opened.get(uri);
+        const [text, st] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
+        return { filePath, uri, cur, text, mtimeMs: st.mtimeMs };
+      }),
+    );
 
     for (const it of items) {
       const version = (it.cur?.version ?? 0) + 1;
@@ -389,7 +390,16 @@ export class LspClient {
   }
 }
 
-const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", ".git", ".next", ".turbo", "coverage"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".git",
+  ".next",
+  ".turbo",
+  "coverage",
+]);
 
 async function findFirstTsFile(root: string): Promise<string | undefined> {
   const queue: string[] = [root];
@@ -406,7 +416,7 @@ async function findFirstTsFile(root: string): Promise<string | undefined> {
       const full = join(dir, e.name);
       if (e.isDirectory()) {
         if (!SKIP_DIRS.has(e.name)) queue.push(full);
-      } else if (e.isFile() && /\.(ts|tsx|mts|cts)$/.test(e.name) && !/\.d\.ts$/.test(e.name)) {
+      } else if (e.isFile() && /\.(ts|tsx|mts|cts)$/.test(e.name) && !e.name.endsWith(".d.ts")) {
         return full;
       }
     }

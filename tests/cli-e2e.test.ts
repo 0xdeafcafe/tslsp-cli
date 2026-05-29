@@ -11,13 +11,18 @@ const cliJs = resolve(projectRoot, "dist", "cli.js");
 
 let workspace: string;
 
-function runCli(args: string[], cwd = workspace, timeoutMs = 30_000): Promise<{
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}> {
+function runCli(
+  args: string[],
+  cwd = workspace,
+  extraEnv: Record<string, string> = {},
+  timeoutMs = 30_000,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolveP, rejectP) => {
-    const child = spawn("node", [cliJs, ...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("node", [cliJs, ...args], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...extraEnv },
+    });
     let stdout = "";
     let stderr = "";
     const t = setTimeout(() => {
@@ -42,7 +47,16 @@ beforeAll(async () => {
   writeFileSync(
     resolve(workspace, "tsconfig.json"),
     JSON.stringify(
-      { compilerOptions: { target: "es2022", module: "esnext", moduleResolution: "bundler", strict: true, noEmit: true }, include: ["src/**/*"] },
+      {
+        compilerOptions: {
+          target: "es2022",
+          module: "esnext",
+          moduleResolution: "bundler",
+          strict: true,
+          noEmit: true,
+        },
+        include: ["src/**/*"],
+      },
       null,
       2,
     ),
@@ -80,7 +94,7 @@ describe("CLI e2e", () => {
   it("prints root help with all commands listed", async () => {
     const { code, stdout } = await runCli(["--help"]);
     expect(code).toBe(0);
-    expect(stdout).toMatch(/tslsp — type-aware TypeScript code intelligence CLI/);
+    expect(stdout).toMatch(/tslsp-cli — type-aware TypeScript code intelligence CLI/);
     expect(stdout).toMatch(/find_symbol/);
     expect(stdout).toMatch(/rename_file/);
     expect(stdout).toMatch(/call_hierarchy/);
@@ -92,6 +106,28 @@ describe("CLI e2e", () => {
     expect(stdout).toMatch(/<old-path>/);
     expect(stdout).toMatch(/<new-path>/);
     expect(stdout).toMatch(/--dry-run/);
+  });
+
+  it("exits 2 with a friendly error when global flags eat the whole argv", async () => {
+    // `--session` with no following token used to crash on the
+    // `args.shift()!` non-null assertion.
+    const { code, stderr } = await runCli(["--session"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/--session requires a value/);
+  });
+
+  it("exits 2 when --session is followed by another flag", async () => {
+    // Previously --session would silently swallow the next flag as its value.
+    // (--help is not a pre-stripped global, so it lands here as the value.)
+    const { code, stderr } = await runCli(["--session", "--help"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/--session requires a value/);
+  });
+
+  it("exits 2 with a friendly error when given no subcommand", async () => {
+    const { code, stderr } = await runCli(["--daemon"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/missing subcommand/);
   });
 
   it("exits nonzero on unknown command", async () => {
@@ -126,58 +162,45 @@ describe("CLI e2e", () => {
     expect(stdout).toMatch(/=== .*index\.ts ===/);
   });
 
-  it("`tslsp mcp` starts a real MCP server over stdio and responds to initialize", async () => {
-    // Spawn `tslsp mcp` and drive the MCP handshake; if the regression
-    // returned (process.exit kills it on import) initialize never responds.
-    const child = spawn("node", [cliJs, "mcp"], { cwd: workspace, stdio: ["pipe", "pipe", "pipe"] });
-    child.stderr!.on("data", () => {});
-
-    let buf = Buffer.alloc(0);
-    const pending = new Map<number, (v: any) => void>();
-    child.stdout!.on("data", (chunk: Buffer) => {
-      buf = Buffer.concat([buf, chunk]);
-      while (true) {
-        const nl = buf.indexOf(0x0a);
-        if (nl === -1) return;
-        const line = buf.slice(0, nl).toString("utf8").replace(/\r$/, "");
-        buf = buf.slice(nl + 1);
-        if (!line) continue;
-        try {
-          const msg = JSON.parse(line);
-          if (msg.id !== undefined && pending.has(msg.id)) {
-            const r = pending.get(msg.id)!;
-            pending.delete(msg.id);
-            r(msg);
-          }
-        } catch { /* ignore non-json */ }
-      }
-    });
-
-    function rpc<T = any>(id: number, method: string, params: unknown): Promise<T> {
-      return new Promise((res) => {
-        pending.set(id, res as any);
-        child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-      });
-    }
-
+  it("--daemon routes the call through an autospawned daemon", async () => {
+    const cache = mkdtempSync(resolve(tmpdir(), "tslsp-e2e-daemon-"));
+    const env = {
+      TSLSP_DAEMON_DIR: cache,
+      TSLSP_DAEMON_ENTRY: cliJs,
+      // Long enough that the autospawned daemon survives the whole test.
+      TSLSP_DAEMON_IDLE_MS: "60000",
+    };
     try {
-      const initResult: any = await Promise.race([
-        rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "vitest", version: "0" } }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("initialize timed out — tslsp mcp likely exited")), 10_000)),
-      ]);
-      expect(initResult.result?.protocolVersion).toBeDefined();
+      const first = await runCli(["--daemon", "find-symbol", "add"], workspace, env);
+      expect(first.code).toBe(0);
+      expect(first.stdout).toMatch(/src\/math\.ts:1.*function add/);
 
-      child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-      const listResult: any = await rpc(2, "tools/list", {});
-      const names = listResult.result.tools.map((t: { name: string }) => t.name);
-      expect(names).toContain("rename_file");
-      expect(names).toContain("call_hierarchy");
+      // List should show one alive daemon for this workspace.
+      const list = await runCli(["daemon", "list"], workspace, env);
+      expect(list.code).toBe(0);
+      expect(list.stdout).toMatch(/alive\s+pid=\d+.*session=default/);
+
+      // --json envelope on the daemon path.
+      const json = await runCli(["--daemon", "--json", "find-symbol", "add"], workspace, env);
+      expect(json.code).toBe(0);
+      const parsed = JSON.parse(json.stdout.trim());
+      expect(parsed.ok).toBe(true);
+      expect(parsed.text).toMatch(/function add/);
+
+      // --session targets a named daemon distinct from "default".
+      const named = await runCli(
+        ["--daemon", "--session", "alt", "find-symbol", "add"],
+        workspace,
+        env,
+      );
+      expect(named.code).toBe(0);
+      const list2 = await runCli(["daemon", "list"], workspace, env);
+      expect(list2.stdout).toMatch(/session=default/);
+      expect(list2.stdout).toMatch(/session=alt/);
     } finally {
-      child.kill("SIGTERM");
-      await new Promise((r) => setTimeout(r, 100));
-      if (!child.killed) child.kill("SIGKILL");
+      await runCli(["daemon", "kill-all"], workspace, env).catch(() => {});
     }
-  }, 30_000);
+  }, 60_000);
 
   it("install --skills writes SKILL.md to the project scope", async () => {
     const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
@@ -204,8 +227,10 @@ describe("CLI e2e", () => {
   it("rejects schema-violating args (--apply -1 fails .nonnegative())", async () => {
     const { code, stderr } = await runCli([
       "code-action",
-      "--file", resolve(workspace, "src/math.ts"),
-      "--apply", "-1",
+      "--file",
+      resolve(workspace, "src/math.ts"),
+      "--apply",
+      "-1",
     ]);
     expect(code).toBe(2);
     expect(stderr).toMatch(/invalid --apply/);

@@ -27,12 +27,8 @@ describe("applyEditsToText", () => {
 
   it("applies edits across multiple lines", () => {
     const text = ["function add(a, b) {", "  return a + b;", "}", ""].join("\n");
-    const edits: TextEdit[] = [
-      { range: r(0, 9, 0, 12), newText: "sum" },
-    ];
-    expect(applyEditsToText(text, edits)).toBe(
-      "function sum(a, b) {\n  return a + b;\n}\n",
-    );
+    const edits: TextEdit[] = [{ range: r(0, 9, 0, 12), newText: "sum" }];
+    expect(applyEditsToText(text, edits)).toBe("function sum(a, b) {\n  return a + b;\n}\n");
   });
 
   it("handles a multi-line edit (range spans lines)", () => {

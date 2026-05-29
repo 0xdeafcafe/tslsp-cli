@@ -46,7 +46,8 @@ export async function formatLocations(
   const total = locs.length;
   const slice = locs.slice(0, cap);
   const lines = await Promise.all(slice.map((l) => formatLocation(l, root)));
-  const truncated = total > cap ? `\n(showing ${cap} of ${total} — narrow the query to see more)` : "";
+  const truncated =
+    total > cap ? `\n(showing ${cap} of ${total} — narrow the query to see more)` : "";
   return { text: lines.join("\n") + truncated, total, returned: slice.length };
 }
 
@@ -57,7 +58,7 @@ export function formatHover(hover: Hover | null): string {
   if (typeof c === "string") text = c;
   else if (Array.isArray(c)) {
     text = c
-      .map((x) => (typeof x === "string" ? x : (x as { value?: string }).value ?? ""))
+      .map((x) => (typeof x === "string" ? x : ((x as { value?: string }).value ?? "")))
       .filter(Boolean)
       .join("\n\n");
   } else if (c && typeof c === "object" && "value" in c) {
@@ -77,11 +78,32 @@ function trimHover(s: string): string {
 }
 
 const SYMBOL_KIND: Record<number, string> = {
-  1: "file", 2: "module", 3: "namespace", 4: "package", 5: "class", 6: "method",
-  7: "property", 8: "field", 9: "constructor", 10: "enum", 11: "interface",
-  12: "function", 13: "variable", 14: "constant", 15: "string", 16: "number",
-  17: "boolean", 18: "array", 19: "object", 20: "key", 21: "null",
-  22: "enum-member", 23: "struct", 24: "event", 25: "operator", 26: "type-param",
+  1: "file",
+  2: "module",
+  3: "namespace",
+  4: "package",
+  5: "class",
+  6: "method",
+  7: "property",
+  8: "field",
+  9: "constructor",
+  10: "enum",
+  11: "interface",
+  12: "function",
+  13: "variable",
+  14: "constant",
+  15: "string",
+  16: "number",
+  17: "boolean",
+  18: "array",
+  19: "object",
+  20: "key",
+  21: "null",
+  22: "enum-member",
+  23: "struct",
+  24: "event",
+  25: "operator",
+  26: "type-param",
 };
 
 export function kindName(k: number): string {
@@ -119,22 +141,34 @@ function callItemLabel(item: CallHierarchyItem, root: string): string {
   return `${rel}:${line}  ${kindName(item.kind)} ${item.name}`;
 }
 
-export function formatCallHierarchyIncoming(calls: CallHierarchyIncomingCall[], root: string): string {
+export function formatCallHierarchyIncoming(
+  calls: CallHierarchyIncomingCall[],
+  root: string,
+): string {
   if (!calls.length) return "no callers";
   return calls
     .map((c) => {
-      const ranges = c.fromRanges.map((r) => r.start.line + 1).slice(0, 5).join(",");
+      const ranges = c.fromRanges
+        .map((r) => r.start.line + 1)
+        .slice(0, 5)
+        .join(",");
       const extra = c.fromRanges.length > 5 ? `,+${c.fromRanges.length - 5}` : "";
       return `${callItemLabel(c.from, root)}  (calls@${ranges}${extra})`;
     })
     .join("\n");
 }
 
-export function formatCallHierarchyOutgoing(calls: CallHierarchyOutgoingCall[], root: string): string {
+export function formatCallHierarchyOutgoing(
+  calls: CallHierarchyOutgoingCall[],
+  root: string,
+): string {
   if (!calls.length) return "no callees";
   return calls
     .map((c) => {
-      const ranges = c.fromRanges.map((r) => r.start.line + 1).slice(0, 5).join(",");
+      const ranges = c.fromRanges
+        .map((r) => r.start.line + 1)
+        .slice(0, 5)
+        .join(",");
       const extra = c.fromRanges.length > 5 ? `,+${c.fromRanges.length - 5}` : "";
       return `${callItemLabel(c.to, root)}  (from@${ranges}${extra})`;
     })

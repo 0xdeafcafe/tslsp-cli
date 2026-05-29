@@ -1,53 +1,57 @@
 {
-  "name": "@0xdeafcafe/tslsp-mcp",
+  "name": "@0xdeafcafe/tslsp-cli",
   "version": "0.1.0",
-  "description": "MCP server exposing the TypeScript language server (tsgo) — rename, references, definitions, hover, symbols, diagnostics.",
-  "type": "module",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/0xdeafcafe/tslsp-mcp.git"
-  },
-  "homepage": "https://github.com/0xdeafcafe/tslsp-mcp#readme",
-  "bugs": {
-    "url": "https://github.com/0xdeafcafe/tslsp-mcp/issues"
-  },
+  "description": "Type-aware TypeScript code intelligence CLI — rename, references, definitions, hover, symbols, diagnostics, call hierarchy, code actions. Backed by tsgo.",
   "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "typescript",
-    "tsgo",
-    "lsp",
     "claude",
     "claude-code",
+    "cli",
+    "lsp",
+    "refactor",
     "rename",
-    "refactor"
+    "tsgo",
+    "typescript"
   ],
+  "homepage": "https://github.com/0xdeafcafe/tslsp-cli#readme",
+  "bugs": {
+    "url": "https://github.com/0xdeafcafe/tslsp-cli/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xdeafcafe/tslsp-cli.git"
+  },
   "bin": {
-    "tslsp-mcp": "dist/index.js",
-    "tslsp": "dist/cli.js"
+    "tslsp-cli": "dist/cli.js"
   },
   "files": [
     "dist",
     "skills"
   ],
+  "type": "module",
   "scripts": {
-    "build": "tsc",
+    "clean": "rm -rf dist",
+    "build": "pnpm run clean && tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js",
+    "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@typescript/native-preview": "7.0.0-dev.20260506.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",
     "@vitest/ui": "^4.1.6",
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   },

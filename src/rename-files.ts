@@ -13,7 +13,16 @@ export interface FileRenameSummary {
   import_files: string[];
 }
 
-const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", ".git", ".next", ".turbo", "coverage"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".git",
+  ".next",
+  ".turbo",
+  "coverage",
+]);
 const TS_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 
 /** Walk a directory and return every TS/JS file path. Used to expand a folder
@@ -46,7 +55,9 @@ async function listSourceFiles(dir: string): Promise<string[]> {
 export async function expandRenames(oldPath: string, newPath: string): Promise<FileRename[]> {
   const st = await stat(oldPath);
   if (st.isFile()) {
-    return [{ oldUri: pathToFileURL(oldPath).toString(), newUri: pathToFileURL(newPath).toString() }];
+    return [
+      { oldUri: pathToFileURL(oldPath).toString(), newUri: pathToFileURL(newPath).toString() },
+    ];
   }
   if (!st.isDirectory()) throw new Error(`${oldPath} is neither a file nor a directory`);
   const files = await listSourceFiles(oldPath);

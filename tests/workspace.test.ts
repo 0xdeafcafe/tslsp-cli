@@ -1,8 +1,8 @@
-import { describe, expect, it, beforeAll } from "vitest";
+import { afterEach, describe, expect, it, beforeAll } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findProjectRoot } from "../src/workspace.js";
+import { findProjectRoot, LspPool } from "../src/workspace.js";
 
 let root: string;
 let nested: string;
@@ -45,5 +45,30 @@ describe("findProjectRoot", () => {
   it("handles a non-existent path by walking up its dirname", () => {
     const ghost = join(nested, "does-not-exist.ts");
     expect(findProjectRoot(ghost)).toBe(root);
+  });
+});
+
+describe("LspPool idle reaper", () => {
+  let pool: LspPool | undefined;
+
+  afterEach(async () => {
+    if (pool) await pool.disposeAll();
+    pool = undefined;
+  });
+
+  it("reaps a tsgo idle past tsgoIdleMs", async () => {
+    pool = new LspPool({ tsgoIdleMs: 400 });
+    await pool.forFile(join(nested, "Button.tsx"));
+    expect(pool.roots()).toEqual([root]);
+    // Reaper interval = idle/4 = 100ms; wait ≥ 2× idle so we definitely cross.
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(pool.roots()).toEqual([]);
+  });
+
+  it("does not reap when tsgoIdleMs is 0", async () => {
+    pool = new LspPool({ tsgoIdleMs: 0 });
+    await pool.forFile(join(nested, "Button.tsx"));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(pool.roots()).toEqual([root]);
   });
 });
