@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.2.0...v0.3.0) (2026-05-29)
+
+
+### Features
+
+* batch-friendly inputs, lean outputs, glob support ([#15](https://github.com/0xdeafcafe/tslsp-cli/issues/15)) ([9583abd](https://github.com/0xdeafcafe/tslsp-cli/commit/9583abde9ff401bace3d2c750f53fc33d7cedf95))
+
 ## [0.2.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.1.0...v0.2.0) (2026-05-29)
 
 
