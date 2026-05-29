@@ -53,8 +53,12 @@ export async function formatLocations(
 /** Group locations by file and render as `path (N): l1, l2, l3`. Drops
  * snippets entirely — a heavily-referenced symbol with 200 hits goes from
  * ~15KB to a few hundred bytes. Lines are 1-based to match the editor. */
-export function formatLocationsByFile(locs: Location[], root: string): string {
-  if (!locs.length) return "";
+export function formatLocationsByFile(
+  locs: Location[],
+  root: string,
+  cap = Infinity,
+): { text: string; files: number; omitted: number } {
+  if (!locs.length) return { text: "", files: 0, omitted: 0 };
   const byFile = new Map<string, number[]>();
   for (const l of locs) {
     const rel = uriToRel(l.uri, root);
@@ -63,13 +67,15 @@ export function formatLocationsByFile(locs: Location[], root: string): string {
     byFile.set(rel, list);
   }
   // Stable order: file paths sorted alphabetically; lines deduped + ascending.
-  return [...byFile.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
+  const ordered = [...byFile.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const shown = ordered.slice(0, cap);
+  const text = shown
     .map(([rel, lines]) => {
       const uniq = [...new Set(lines)].sort((a, b) => a - b);
       return `${rel} (${uniq.length}): ${uniq.join(", ")}`;
     })
     .join("\n");
+  return { text, files: ordered.length, omitted: ordered.length - shown.length };
 }
 
 export function formatHover(hover: Hover | null): string {

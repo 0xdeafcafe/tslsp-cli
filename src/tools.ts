@@ -351,8 +351,13 @@ async function referencesOne(
       })) ?? [];
     if (!refs.length) return okEmpty("no references");
     if (opts.summary) {
-      const head = `${refs.length} ref${refs.length === 1 ? "" : "s"}`;
-      return ok(`${head}\n${formatLocationsByFile(refs, root)}`);
+      // Same default as the non-summary path. Caps FILES, not refs — per-file
+      // counts stay accurate even when the file list is truncated.
+      const cap = opts.limit ?? 200;
+      const { text, files, omitted } = formatLocationsByFile(refs, root, cap);
+      const head = `${refs.length} ref${refs.length === 1 ? "" : "s"} across ${files} file${files === 1 ? "" : "s"}`;
+      const trailer = omitted > 0 ? `\n+${omitted} more files (raise --limit)` : "";
+      return ok(`${head}\n${text}${trailer}`);
     }
     const f = await formatLocations(refs, root, opts.limit ?? 200);
     return ok(f.text);
@@ -691,6 +696,7 @@ const diagnostics = defineTool({
   name: "diagnostics",
   description:
     "Type errors + warnings. Accepts files, directories, or globs (`diagnostics 'src/**/*.ts'`). With no args, aggregates across every open file.",
+  positional: ["files"],
   inputSchema: {
     file: z.string().optional().describe("Single file path."),
     files: z

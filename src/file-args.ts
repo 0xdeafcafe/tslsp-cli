@@ -21,6 +21,27 @@ function abs(p: string, cwd: string): string {
   return isAbsolute(p) ? p : resolve(cwd, p);
 }
 
+/** Drop matches whose path crosses an ignored segment, UNLESS that segment
+ * appears literally in the user's pattern (e.g. someone explicitly globbing
+ * `node_modules/**\/*.ts` wants those results — but a broad `**\/*.ts`
+ * shouldn't drag generated/dependency code in). */
+function patternMentions(pattern: string, segments: Set<string>): Set<string> {
+  const mentioned = new Set<string>();
+  for (const part of pattern.split(/[\\/]/)) {
+    if (segments.has(part)) mentioned.add(part);
+  }
+  return mentioned;
+}
+
+function shouldIgnoreRel(rel: string, allowedSegments?: Set<string>): boolean {
+  for (const seg of rel.split(sep)) {
+    if (!IGNORE_DIRS.has(seg)) continue;
+    if (allowedSegments?.has(seg)) continue;
+    return true;
+  }
+  return false;
+}
+
 /** Expand a mixed list of literal files, directories, and globs into a sorted,
  * deduped absolute-path list. Used by tools that take `file`/`files` so the
  * caller can say `outline 'src/**\/*.ts'` or `diagnostics src/api/` instead of
@@ -28,18 +49,26 @@ function abs(p: string, cwd: string): string {
  *
  * - Literal file → kept as-is (no existence check; the LSP will error nicely).
  * - Directory → recursive walk, filtered by SOURCE_EXTS, IGNORE_DIRS skipped.
- * - Glob (contains `*`, `?`, `[`, `{`) → resolved via `fs.glob` from cwd. */
+ * - Glob (contains `*`, `?`, `[`, `{`) → resolved via `fs.glob` from cwd, with
+ *   the same IGNORE_DIRS + SOURCE_EXTS filters applied so a broad `**\/*.ts`
+ *   doesn't drag in `node_modules`/`dist`/etc. matches. */
 export async function expandFileArgs(paths: string[], cwd: string): Promise<string[]> {
   const out = new Set<string>();
   for (const raw of paths) {
     if (hasGlobChars(raw)) {
-      const pattern = isAbsolute(raw) ? raw : raw;
-      for await (const match of glob(pattern, { cwd })) {
-        const full = abs(match as string, cwd);
+      // Pattern-mentioned segments are an escape hatch: someone who explicitly
+      // globs `node_modules/**/*.ts` wants those hits. A broad `**/*.ts` does
+      // not, so we still filter that case.
+      const allowed = patternMentions(raw, IGNORE_DIRS);
+      for await (const match of glob(raw, { cwd })) {
+        const m = match as string;
+        if (shouldIgnoreRel(m, allowed)) continue;
+        const full = abs(m, cwd);
         await collect(full, out);
       }
       continue;
     }
+    // Literal: trust the user — they typed it on purpose.
     const full = abs(raw, cwd);
     await collect(full, out);
   }
@@ -64,12 +93,11 @@ async function collect(p: string, into: Set<string>): Promise<void> {
 }
 
 async function walkDir(dir: string, into: Set<string>): Promise<void> {
-  // Use fs.glob with the directory as cwd so we benefit from its built-in
-  // traversal — but apply our own ignore-dir + ext filter on the relative
-  // path it yields.
+  // fs.glob's matches here are relative to `dir`, so `dir` itself never
+  // appears in them — the ignore filter only catches sub-directories.
   for await (const rel of glob("**/*", { cwd: dir })) {
     const r = rel as string;
-    if (r.split(sep).some((seg) => IGNORE_DIRS.has(seg))) continue;
+    if (shouldIgnoreRel(r)) continue;
     const dot = r.lastIndexOf(".");
     if (dot < 0) continue;
     const ext = r.slice(dot);

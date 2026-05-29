@@ -202,8 +202,10 @@ describe("formatLocationsByFile", () => {
       },
     ];
     const out = formatLocationsByFile(locs, root);
-    expect(out).toContain("src/a.ts (2): 5, 10");
-    expect(out).toContain("src/b.ts (1): 1");
+    expect(out.text).toContain("src/a.ts (2): 5, 10");
+    expect(out.text).toContain("src/b.ts (1): 1");
+    expect(out.files).toBe(2);
+    expect(out.omitted).toBe(0);
   });
 
   it("dedupes repeated lines within the same file", () => {
@@ -213,11 +215,31 @@ describe("formatLocationsByFile", () => {
       range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
     };
     const out = formatLocationsByFile([same, same, same], root);
-    expect(out).toBe("x.ts (1): 1");
+    expect(out.text).toBe("x.ts (1): 1");
+    expect(out.files).toBe(1);
   });
 
-  it("returns empty string for no input", () => {
-    expect(formatLocationsByFile([], "/anything")).toBe("");
+  it("returns an empty result for no input", () => {
+    const out = formatLocationsByFile([], "/anything");
+    expect(out.text).toBe("");
+    expect(out.files).toBe(0);
+    expect(out.omitted).toBe(0);
+  });
+
+  it("caps the file list and reports the omitted count", () => {
+    const root = "/workspace/proj";
+    // Three different files; cap to two.
+    const locs: Location[] = ["a", "b", "c"].map((f) => ({
+      uri: `file://${root}/src/${f}.ts`,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+    }));
+    const out = formatLocationsByFile(locs, root, 2);
+    expect(out.files).toBe(3);
+    expect(out.omitted).toBe(1);
+    // Sorted alphabetically — a.ts and b.ts kept, c.ts dropped.
+    expect(out.text).toContain("src/a.ts");
+    expect(out.text).toContain("src/b.ts");
+    expect(out.text).not.toContain("src/c.ts");
   });
 });
 

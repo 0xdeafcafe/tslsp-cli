@@ -215,9 +215,37 @@ describe("CLI e2e", () => {
   it("references --summary groups hits by file with counts", async () => {
     const { code, stdout } = await runCli(["references", "--symbol", "add", "--summary"]);
     expect(code).toBe(0);
-    expect(stdout).toMatch(/\d+ refs?/);
+    expect(stdout).toMatch(/\d+ refs? across \d+ files?/);
     // Format is `path (N): lines` — no per-ref snippets.
     expect(stdout).toMatch(/\.ts \(\d+\): /);
+  });
+
+  it("references --summary honors --limit by capping the file list", async () => {
+    // Cap to 1 file. We expect the summary to report the real total
+    // (refs across N files) and a trailer noting the omitted files.
+    const { code, stdout } = await runCli([
+      "references",
+      "--symbol",
+      "add",
+      "--summary",
+      "--limit",
+      "1",
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/across 2 files/);
+    expect(stdout).toMatch(/\+1 more files \(raise --limit\)/);
+  });
+
+  it("diagnostics accepts positional file args (no --files needed)", async () => {
+    // Mirrors `outline FILE FILE` — was previously rejected as "unexpected
+    // argument" because `diagnostics` lacked a positional mapping.
+    const { code, stdout } = await runCli([
+      "diagnostics",
+      resolve(workspace, "src/math.ts"),
+      resolve(workspace, "src/index.ts"),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("no diagnostics");
   });
 
   it("diagnostics on multiple clean files collapses to one short line", async () => {

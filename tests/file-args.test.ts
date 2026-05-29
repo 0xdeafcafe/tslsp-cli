@@ -50,6 +50,24 @@ describe("expandFileArgs", () => {
     expect(out).toEqual([resolve(dir, "src/a.ts")]);
   });
 
+  it("filters ignored directories out of broad glob matches", async () => {
+    const dir = fixture();
+    // Broad glob — without filtering this would include node_modules/junk/skip.ts
+    // and dist/built.ts, exactly the noise the IGNORE_DIRS set exists to prevent.
+    const out = await expandFileArgs(["**/*.ts"], dir);
+    expect(out.some((p) => p.includes(`${dir}/node_modules`))).toBe(false);
+    expect(out.some((p) => p.includes(`${dir}/dist`))).toBe(false);
+    // The legitimate hit (src/a.ts) is still present.
+    expect(out).toContain(resolve(dir, "src/a.ts"));
+  });
+
+  it("respects an explicit ignored-segment in the pattern as an escape hatch", async () => {
+    const dir = fixture();
+    // Glob that explicitly names node_modules → user clearly wants those hits.
+    const out = await expandFileArgs(["node_modules/**/*.ts"], dir);
+    expect(out).toContain(resolve(dir, "node_modules/junk/skip.ts"));
+  });
+
   it("dedupes when a literal and glob overlap", async () => {
     const dir = fixture();
     const out = await expandFileArgs(["src/a.ts", "src/**/*.ts"], dir);
