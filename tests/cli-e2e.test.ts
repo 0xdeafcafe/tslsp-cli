@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -288,6 +288,44 @@ describe("CLI e2e", () => {
     const { code, stdout } = await runCli(["install", "--skills", "--project"], tmpHome);
     expect(code).toBe(0);
     expect(stdout).toMatch(/already installed/);
+  });
+
+  it("install --skills --with-claude-md appends a nudge to CLAUDE.md", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const { code, stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-claude-md"],
+      tmpHome,
+    );
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/added skill nudge/);
+    const md = readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8");
+    expect(md).toMatch(/tslsp-cli:auto-nudge/);
+    expect(md).toMatch(/use `tslsp-cli` instead of/);
+  });
+
+  it("install --skills --with-claude-md is idempotent", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    await runCli(["install", "--skills", "--project", "--with-claude-md"], tmpHome);
+    const { stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-claude-md"],
+      tmpHome,
+    );
+    expect(stdout).toMatch(/already nudges/);
+    const md = readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8");
+    // Only one marker — the second run did not re-append.
+    const occurrences = md.match(/tslsp-cli:auto-nudge/g) ?? [];
+    expect(occurrences.length).toBe(1);
+  });
+
+  it("install --skills --with-claude-md preserves existing CLAUDE.md content", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const existingMd = "# project notes\n\nLine I wrote myself.\n";
+    writeFileSync(resolve(tmpHome, "CLAUDE.md"), existingMd, "utf8");
+    await runCli(["install", "--skills", "--project", "--with-claude-md"], tmpHome);
+    const md = readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8");
+    expect(md).toMatch(/^# project notes/);
+    expect(md).toMatch(/Line I wrote myself\./);
+    expect(md).toMatch(/tslsp-cli:auto-nudge/);
   });
 
   it("rejects schema-violating args (--limit 0 fails .positive())", async () => {

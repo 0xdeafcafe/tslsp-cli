@@ -153,3 +153,15 @@ If `tslsp-cli` isn't on PATH:
 ```bash
 npx --no-install @0xdeafcafe/tslsp-cli tslsp-cli <command> [...]
 ```
+
+## Make Claude reach for this without thinking
+
+```bash
+# Project: skill + a CLAUDE.md nudge so Claude routes here every session.
+tslsp-cli install --skills --project --with-claude-md
+
+# User: same, but available to every project on the machine.
+tslsp-cli install --skills --with-claude-md
+```
+
+`--with-claude-md` appends a short routing block to `CLAUDE.md` (idempotent — guarded by a marker comment). Project scope writes to `./CLAUDE.md`; user scope writes to `~/.claude/CLAUDE.md`.
