@@ -162,6 +162,78 @@ describe("CLI e2e", () => {
     expect(stdout).toMatch(/=== .*index\.ts ===/);
   });
 
+  it("find-symbol accepts multi-positional queries and labels each block", async () => {
+    const { code, stdout } = await runCli(["find-symbol", "add", "double"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/=== add ===/);
+    expect(stdout).toMatch(/=== double ===/);
+    expect(stdout).toMatch(/function add/);
+    expect(stdout).toMatch(/function double/);
+  });
+
+  it("outline expands a glob across multiple files", async () => {
+    const { code, stdout } = await runCli(["outline", "src/**/*.ts"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/=== .*math\.ts ===/);
+    expect(stdout).toMatch(/=== .*index\.ts ===/);
+    expect(stdout).toMatch(/function add/);
+  });
+
+  it("outline expands a directory recursively", async () => {
+    const { code, stdout } = await runCli(["outline", "src"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/=== .*math\.ts ===/);
+    expect(stdout).toMatch(/=== .*index\.ts ===/);
+  });
+
+  it("outline --kind function filters out non-functions", async () => {
+    const { code, stdout } = await runCli([
+      "outline",
+      "--kind",
+      "function",
+      resolve(workspace, "src/math.ts"),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/function add/);
+    expect(stdout).toMatch(/function double/);
+  });
+
+  it("find-symbol --kind filters workspace results to the requested kinds", async () => {
+    const { code, stdout } = await runCli(["find-symbol", "--kind", "function", "add"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/function add/);
+    expect(stdout).not.toMatch(/variable add/);
+  });
+
+  it("find-symbol rejects unknown --kind with a helpful message", async () => {
+    const { code, stderr } = await runCli(["find-symbol", "--kind", "wizard", "add"]);
+    expect(code).not.toBe(0);
+    expect(stderr).toMatch(/unknown --kind value/);
+    expect(stderr).toMatch(/class|function|interface/);
+  });
+
+  it("references --summary groups hits by file with counts", async () => {
+    const { code, stdout } = await runCli(["references", "--symbol", "add", "--summary"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/\d+ refs?/);
+    // Format is `path (N): lines` — no per-ref snippets.
+    expect(stdout).toMatch(/\.ts \(\d+\): /);
+  });
+
+  it("diagnostics on multiple clean files collapses to one short line", async () => {
+    // Both files are clean; we should get a single "no diagnostics" — not
+    // a labeled block per file. This is the token-saving collapse.
+    const { code, stdout } = await runCli([
+      "diagnostics",
+      "--files",
+      `${resolve(workspace, "src/math.ts")},${resolve(workspace, "src/index.ts")}`,
+    ]);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("no diagnostics");
+    expect(stdout).not.toMatch(/=== /);
+  });
+
+
   it("--daemon routes the call through an autospawned daemon", async () => {
     const cache = mkdtempSync(resolve(tmpdir(), "tslsp-e2e-daemon-"));
     const env = {

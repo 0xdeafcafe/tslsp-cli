@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  allKindNames,
   formatDiagnostic,
   formatHover,
   formatLocations,
+  formatLocationsByFile,
   formatOutline,
+  kindFromName,
   kindName,
   uriToRel,
 } from "../src/format.js";
@@ -89,7 +92,7 @@ describe("formatLocations", () => {
     const out = await formatLocations(locs, dir, 2);
     expect(out.returned).toBe(2);
     expect(out.total).toBe(5);
-    expect(out.text).toMatch(/showing 2 of 5/);
+    expect(out.text).toMatch(/\+3 more \(raise --limit\)/);
   });
 });
 
@@ -119,6 +122,102 @@ describe("formatOutline", () => {
 
   it("returns (empty) for no symbols", () => {
     expect(formatOutline([])).toBe("(empty)");
+  });
+
+  it("clamps to maxDepth = 0 (top-level only)", () => {
+    const symbols: DocumentSymbol[] = [
+      {
+        name: "Outer",
+        kind: 5,
+        range: { start: { line: 0, character: 0 }, end: { line: 5, character: 0 } },
+        selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+        children: [
+          {
+            name: "method",
+            kind: 6,
+            range: { start: { line: 1, character: 2 }, end: { line: 3, character: 0 } },
+            selectionRange: { start: { line: 1, character: 2 }, end: { line: 1, character: 8 } },
+          },
+        ],
+      },
+    ];
+    const out = formatOutline(symbols, { maxDepth: 0 });
+    expect(out).toContain("class Outer");
+    expect(out).not.toContain("method method");
+  });
+
+  it("filters by kind set", () => {
+    const symbols: DocumentSymbol[] = [
+      {
+        name: "Outer",
+        kind: 5,
+        range: { start: { line: 0, character: 0 }, end: { line: 5, character: 0 } },
+        selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+        children: [
+          {
+            name: "method",
+            kind: 6,
+            range: { start: { line: 1, character: 2 }, end: { line: 3, character: 0 } },
+            selectionRange: { start: { line: 1, character: 2 }, end: { line: 1, character: 8 } },
+          },
+        ],
+      },
+    ];
+    // Keep methods only — class header is dropped but children still walked.
+    const out = formatOutline(symbols, { kinds: new Set([6]) });
+    expect(out).not.toContain("class Outer");
+    expect(out).toContain("method method");
+  });
+});
+
+describe("kindFromName / allKindNames", () => {
+  it("round-trips kind names through kindFromName/kindName", () => {
+    for (const name of allKindNames()) {
+      const n = kindFromName(name);
+      expect(n).toBeDefined();
+      expect(kindName(n!)).toBe(name);
+    }
+  });
+
+  it("returns undefined for unknown names", () => {
+    expect(kindFromName("not-a-kind")).toBeUndefined();
+  });
+});
+
+describe("formatLocationsByFile", () => {
+  it("groups locations by file with line lists and counts", () => {
+    const root = "/workspace/proj";
+    const locs: Location[] = [
+      {
+        uri: `file://${root}/src/a.ts`,
+        range: { start: { line: 4, character: 0 }, end: { line: 4, character: 1 } },
+      },
+      {
+        uri: `file://${root}/src/a.ts`,
+        range: { start: { line: 9, character: 0 }, end: { line: 9, character: 1 } },
+      },
+      {
+        uri: `file://${root}/src/b.ts`,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+      },
+    ];
+    const out = formatLocationsByFile(locs, root);
+    expect(out).toContain("src/a.ts (2): 5, 10");
+    expect(out).toContain("src/b.ts (1): 1");
+  });
+
+  it("dedupes repeated lines within the same file", () => {
+    const root = "/workspace/proj";
+    const same: Location = {
+      uri: `file://${root}/x.ts`,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+    };
+    const out = formatLocationsByFile([same, same, same], root);
+    expect(out).toBe("x.ts (1): 1");
+  });
+
+  it("returns empty string for no input", () => {
+    expect(formatLocationsByFile([], "/anything")).toBe("");
   });
 });
 
