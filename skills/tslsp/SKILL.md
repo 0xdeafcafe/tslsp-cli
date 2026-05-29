@@ -18,19 +18,19 @@ You will be tempted to use Grep "just to look." Resist. Workspace symbol search 
 
 ## The substitution table — memorize this
 
-| Your reflex                       | What's wrong with it                                                                          | What you do instead                                          |
-| --------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `Grep "User"`                     | Matches comments, markdown, string literals, unrelated identifiers. Silently lies.            | `tslsp-cli find-symbol User`                                 |
-| `Grep -E "User\|Account"`         | Same lies, multiple times.                                                                    | `tslsp-cli find-symbol User Account`                         |
-| `Grep "User" src/`                | Type-blind.                                                                                   | `tslsp-cli find-symbol User --kind class,interface`          |
-| `Grep` to find every usage        | You'll miss a re-export and ship a broken rename.                                             | `tslsp-cli references --symbol User`                         |
-| `Grep` to find the definition     | You get the import line, not the declaration.                                                 | `tslsp-cli definition --symbol User`                         |
-| `Grep` for `implements X`         | Misses anything that isn't a literal match.                                                   | `tslsp-cli implementation --symbol X`                        |
-| `Edit` / `MultiEdit` to rename    | One missed import → prod break. Catastrophic for common names (`User`, `get`, `id`, `value`). | `tslsp-cli rename --symbol Old --new-name New`               |
-| `mv` / `git mv` a `.ts`/`.tsx`    | Every `import` that pointed at the old path still does. TS doesn't re-resolve on move.        | `tslsp-cli rename-file OLD NEW`                              |
+| Your reflex                       | What's wrong with it                                                                          | What you do instead                                            |
+| --------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `Grep "User"`                     | Matches comments, markdown, string literals, unrelated identifiers. Silently lies.            | `tslsp-cli find-symbol User`                                   |
+| `Grep -E "User\|Account"`         | Same lies, multiple times.                                                                    | `tslsp-cli find-symbol User Account`                           |
+| `Grep "User" src/`                | Type-blind.                                                                                   | `tslsp-cli find-symbol User --kind class,interface`            |
+| `Grep` to find every usage        | You'll miss a re-export and ship a broken rename.                                             | `tslsp-cli references --symbol User`                           |
+| `Grep` to find the definition     | You get the import line, not the declaration.                                                 | `tslsp-cli definition --symbol User`                           |
+| `Grep` for `implements X`         | Misses anything that isn't a literal match.                                                   | `tslsp-cli implementation --symbol X`                          |
+| `Edit` / `MultiEdit` to rename    | One missed import → prod break. Catastrophic for common names (`User`, `get`, `id`, `value`). | `tslsp-cli rename --symbol Old --new-name New`                 |
+| `mv` / `git mv` a `.ts`/`.tsx`    | Every `import` that pointed at the old path still does. TS doesn't re-resolve on move.        | `tslsp-cli rename-file OLD NEW`                                |
 | `Read` a 2000-line file to "look" | Wastes tokens. You need the shape, not the bytes.                                             | `tslsp-cli outline FILE` → `Read` only the line range you need |
-| `Bash tsc`                        | Spawns the whole compiler. Slow. No cache.                                                    | `tslsp-cli diagnostics --file FILE`                          |
-| Reading 5 callers manually        | Tedious and incomplete.                                                                       | `tslsp-cli call-hierarchy --symbol fn --direction incoming`  |
+| `Bash tsc`                        | Spawns the whole compiler. Slow. No cache.                                                    | `tslsp-cli diagnostics --file FILE`                            |
+| Reading 5 callers manually        | Tedious and incomplete.                                                                       | `tslsp-cli call-hierarchy --symbol fn --direction incoming`    |
 
 These are HARD rules. They apply to every identifier — slice keys (`features.fooUi`), property names, enum members, type aliases, parameter names. "It's just a few files" is exactly how a missed import ships.
 

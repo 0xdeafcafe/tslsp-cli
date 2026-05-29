@@ -233,7 +233,6 @@ describe("CLI e2e", () => {
     expect(stdout).not.toMatch(/=== /);
   });
 
-
   it("--daemon routes the call through an autospawned daemon", async () => {
     const cache = mkdtempSync(resolve(tmpdir(), "tslsp-e2e-daemon-"));
     const env = {

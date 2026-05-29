@@ -608,9 +608,7 @@ const outline = defineTool({
     files: z
       .array(z.string())
       .optional()
-      .describe(
-        "Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`).",
-      ),
+      .describe("Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`)."),
     depth: z
       .number()
       .int()
@@ -698,9 +696,7 @@ const diagnostics = defineTool({
     files: z
       .array(z.string())
       .optional()
-      .describe(
-        "Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`).",
-      ),
+      .describe("Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`)."),
     severity: z
       .enum(["error", "warning", "info", "all"])
       .optional()
