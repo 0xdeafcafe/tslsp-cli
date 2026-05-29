@@ -46,9 +46,36 @@ export async function formatLocations(
   const total = locs.length;
   const slice = locs.slice(0, cap);
   const lines = await Promise.all(slice.map((l) => formatLocation(l, root)));
-  const truncated =
-    total > cap ? `\n(showing ${cap} of ${total} — narrow the query to see more)` : "";
+  const truncated = total > cap ? `\n+${total - cap} more (raise --limit)` : "";
   return { text: lines.join("\n") + truncated, total, returned: slice.length };
+}
+
+/** Group locations by file and render as `path (N): l1, l2, l3`. Drops
+ * snippets entirely — a heavily-referenced symbol with 200 hits goes from
+ * ~15KB to a few hundred bytes. Lines are 1-based to match the editor. */
+export function formatLocationsByFile(
+  locs: Location[],
+  root: string,
+  cap = Infinity,
+): { text: string; files: number; omitted: number } {
+  if (!locs.length) return { text: "", files: 0, omitted: 0 };
+  const byFile = new Map<string, number[]>();
+  for (const l of locs) {
+    const rel = uriToRel(l.uri, root);
+    const list = byFile.get(rel) ?? [];
+    list.push(l.range.start.line + 1);
+    byFile.set(rel, list);
+  }
+  // Stable order: file paths sorted alphabetically; lines deduped + ascending.
+  const ordered = [...byFile.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const shown = ordered.slice(0, cap);
+  const text = shown
+    .map(([rel, lines]) => {
+      const uniq = [...new Set(lines)].sort((a, b) => a - b);
+      return `${rel} (${uniq.length}): ${uniq.join(", ")}`;
+    })
+    .join("\n");
+  return { text, files: ordered.length, omitted: ordered.length - shown.length };
 }
 
 export function formatHover(hover: Hover | null): string {
@@ -110,15 +137,47 @@ export function kindName(k: number): string {
   return SYMBOL_KIND[k] ?? `kind${k}`;
 }
 
-export function formatOutline(symbols: DocumentSymbol[]): string {
+const KIND_BY_NAME: Map<string, number> = (() => {
+  const m = new Map<string, number>();
+  for (const [k, v] of Object.entries(SYMBOL_KIND)) m.set(v, Number(k));
+  return m;
+})();
+
+/** Look up the numeric LSP SymbolKind for a human name (`"class"`, `"function"`,
+ * etc.). Returns undefined for unknown names so callers can surface a clear
+ * error with the valid set. */
+export function kindFromName(name: string): number | undefined {
+  return KIND_BY_NAME.get(name);
+}
+
+/** All known kind names — used to render `--kind` help and validate inputs. */
+export function allKindNames(): string[] {
+  return [...KIND_BY_NAME.keys()];
+}
+
+export interface FormatOutlineOpts {
+  /** Maximum nesting depth (0-based, inclusive). Use 0 for top-level only. */
+  maxDepth?: number;
+  /** If set, keep only nodes whose kind is in this set. Children of dropped
+   * nodes are still walked so a `class` filter still surfaces members. */
+  kinds?: Set<number>;
+}
+
+export function formatOutline(symbols: DocumentSymbol[], opts: FormatOutlineOpts = {}): string {
   const out: string[] = [];
+  const max = opts.maxDepth;
   const walk = (nodes: DocumentSymbol[], depth: number) => {
     for (const n of nodes) {
-      const indent = "  ".repeat(depth);
-      const sig = n.detail ? ` ${n.detail}` : "";
-      const line = n.range.start.line + 1;
-      out.push(`${indent}${kindName(n.kind)} ${n.name}${sig}  (line ${line})`);
-      if (n.children?.length) walk(n.children, depth + 1);
+      const keep = !opts.kinds || opts.kinds.has(n.kind);
+      if (keep) {
+        const indent = "  ".repeat(depth);
+        const sig = n.detail ? ` ${n.detail}` : "";
+        const line = n.range.start.line + 1;
+        out.push(`${indent}${kindName(n.kind)} ${n.name}${sig}  (line ${line})`);
+      }
+      if (n.children?.length && (max === undefined || depth < max)) {
+        walk(n.children, depth + (keep ? 1 : 0));
+      }
     }
   };
   walk(symbols, 0);

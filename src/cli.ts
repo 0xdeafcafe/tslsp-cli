@@ -99,7 +99,8 @@ async function runInstall(argv: string[]): Promise<number> {
   const scope: "user" | "project" =
     argv.includes("--project") || argv.includes("--local") ? "project" : "user";
   const force = argv.includes("--force");
-  const result = await installSkills({ scope, force });
+  const withClaudeMd = argv.includes("--with-claude-md");
+  const result = await installSkills({ scope, force, withClaudeMd });
   for (const line of result.lines) process.stdout.write(line + "\n");
   return result.ok ? 0 : 1;
 }
@@ -229,14 +230,19 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
   if (sub === "serve") {
     let serveSession: string;
     let workspaceDir: string;
+    let passedVersion: string | undefined;
     try {
       serveSession = takeValue(argv, "--session") ?? sessionName;
       workspaceDir = takeValue(argv, "--workspace") ?? process.cwd();
+      // The client autospawn path passes --version so daemon identity matches
+      // the caller's mismatch-check string. Fall back to package.json for
+      // humans who hand-invoke `tslsp-cli daemon serve`.
+      passedVersion = takeValue(argv, "--version");
     } catch (e) {
       process.stderr.write(`tslsp-cli daemon serve: ${(e as Error).message}\n`);
       return 2;
     }
-    const version = (await readVersion()) ?? "0.0.0";
+    const version = passedVersion ?? (await readVersion()) ?? "0.0.0";
     await serveDaemon({ workspaceDir, sessionName: serveSession, version });
     return 0;
   }
@@ -398,16 +404,19 @@ export function toolHelp(tool: ToolDef): string {
 
 function installHelp(): string {
   return [
-    "tslsp-cli install --skills [--project] [--force]",
+    "tslsp-cli install --skills [--project] [--force] [--with-claude-md]",
     "",
     "Install the tslsp skill so Claude Code (and other skill-aware agents) can",
     "discover it and route TypeScript navigation/refactor work through this CLI.",
     "",
     "flags:",
-    "  --skills    required. install the bundled SKILL.md.",
-    "  --project   install into ./.claude/skills (default: ~/.claude/skills).",
-    "  --local     alias for --project.",
-    "  --force     overwrite an existing skill at the target.",
+    "  --skills           required. install the bundled SKILL.md.",
+    "  --project          install into ./.claude/skills (default: ~/.claude/skills).",
+    "  --local            alias for --project.",
+    "  --force            overwrite an existing skill at the target.",
+    "  --with-claude-md   also append a routing nudge to CLAUDE.md (project scope:",
+    "                     ./CLAUDE.md; user scope: ~/.claude/CLAUDE.md). Idempotent",
+    "                     — guarded by a marker comment so re-runs don't duplicate.",
   ].join("\n");
 }
 

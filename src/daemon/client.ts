@@ -64,6 +64,13 @@ async function spawnDaemon(opts: EnsureOptions): Promise<SessionFile> {
     opts.sessionName,
     "--workspace",
     opts.workspaceDir,
+    // Pass the client's version through so the child identifies itself with
+    // the same string the caller is using for mismatch checks. Without this
+    // the child reads package.json itself, which makes the version-mismatch
+    // path untestable and ties daemon identity to disk state instead of the
+    // caller's contract.
+    "--version",
+    opts.version,
   ];
 
   const child = spawn(process.execPath, args, {

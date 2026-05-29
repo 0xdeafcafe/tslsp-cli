@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -162,6 +162,105 @@ describe("CLI e2e", () => {
     expect(stdout).toMatch(/=== .*index\.ts ===/);
   });
 
+  it("find-symbol accepts multi-positional queries and labels each block", async () => {
+    const { code, stdout } = await runCli(["find-symbol", "add", "double"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/=== add ===/);
+    expect(stdout).toMatch(/=== double ===/);
+    expect(stdout).toMatch(/function add/);
+    expect(stdout).toMatch(/function double/);
+  });
+
+  it("outline expands a glob across multiple files", async () => {
+    const { code, stdout } = await runCli(["outline", "src/**/*.ts"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/=== .*math\.ts ===/);
+    expect(stdout).toMatch(/=== .*index\.ts ===/);
+    expect(stdout).toMatch(/function add/);
+  });
+
+  it("outline expands a directory recursively", async () => {
+    const { code, stdout } = await runCli(["outline", "src"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/=== .*math\.ts ===/);
+    expect(stdout).toMatch(/=== .*index\.ts ===/);
+  });
+
+  it("outline --kind function filters out non-functions", async () => {
+    const { code, stdout } = await runCli([
+      "outline",
+      "--kind",
+      "function",
+      resolve(workspace, "src/math.ts"),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/function add/);
+    expect(stdout).toMatch(/function double/);
+  });
+
+  it("find-symbol --kind filters workspace results to the requested kinds", async () => {
+    const { code, stdout } = await runCli(["find-symbol", "--kind", "function", "add"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/function add/);
+    expect(stdout).not.toMatch(/variable add/);
+  });
+
+  it("find-symbol rejects unknown --kind with a helpful message", async () => {
+    const { code, stderr } = await runCli(["find-symbol", "--kind", "wizard", "add"]);
+    expect(code).not.toBe(0);
+    expect(stderr).toMatch(/unknown --kind value/);
+    expect(stderr).toMatch(/class|function|interface/);
+  });
+
+  it("references --summary groups hits by file with counts", async () => {
+    const { code, stdout } = await runCli(["references", "--symbol", "add", "--summary"]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/\d+ refs? across \d+ files?/);
+    // Format is `path (N): lines` — no per-ref snippets.
+    expect(stdout).toMatch(/\.ts \(\d+\): /);
+  });
+
+  it("references --summary honors --limit by capping the file list", async () => {
+    // Cap to 1 file. We expect the summary to report the real total
+    // (refs across N files) and a trailer noting the omitted files.
+    const { code, stdout } = await runCli([
+      "references",
+      "--symbol",
+      "add",
+      "--summary",
+      "--limit",
+      "1",
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/across 2 files/);
+    expect(stdout).toMatch(/\+1 more files \(raise --limit\)/);
+  });
+
+  it("diagnostics accepts positional file args (no --files needed)", async () => {
+    // Mirrors `outline FILE FILE` — was previously rejected as "unexpected
+    // argument" because `diagnostics` lacked a positional mapping.
+    const { code, stdout } = await runCli([
+      "diagnostics",
+      resolve(workspace, "src/math.ts"),
+      resolve(workspace, "src/index.ts"),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("no diagnostics");
+  });
+
+  it("diagnostics on multiple clean files collapses to one short line", async () => {
+    // Both files are clean; we should get a single "no diagnostics" — not
+    // a labeled block per file. This is the token-saving collapse.
+    const { code, stdout } = await runCli([
+      "diagnostics",
+      "--files",
+      `${resolve(workspace, "src/math.ts")},${resolve(workspace, "src/index.ts")}`,
+    ]);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("no diagnostics");
+    expect(stdout).not.toMatch(/=== /);
+  });
+
   it("--daemon routes the call through an autospawned daemon", async () => {
     const cache = mkdtempSync(resolve(tmpdir(), "tslsp-e2e-daemon-"));
     const env = {
@@ -216,6 +315,44 @@ describe("CLI e2e", () => {
     const { code, stdout } = await runCli(["install", "--skills", "--project"], tmpHome);
     expect(code).toBe(0);
     expect(stdout).toMatch(/already installed/);
+  });
+
+  it("install --skills --with-claude-md appends a nudge to CLAUDE.md", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const { code, stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-claude-md"],
+      tmpHome,
+    );
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/added skill nudge/);
+    const md = readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8");
+    expect(md).toMatch(/tslsp-cli:auto-nudge/);
+    expect(md).toMatch(/use `tslsp-cli` instead of/);
+  });
+
+  it("install --skills --with-claude-md is idempotent", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    await runCli(["install", "--skills", "--project", "--with-claude-md"], tmpHome);
+    const { stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-claude-md"],
+      tmpHome,
+    );
+    expect(stdout).toMatch(/already nudges/);
+    const md = readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8");
+    // Only one marker — the second run did not re-append.
+    const occurrences = md.match(/tslsp-cli:auto-nudge/g) ?? [];
+    expect(occurrences.length).toBe(1);
+  });
+
+  it("install --skills --with-claude-md preserves existing CLAUDE.md content", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const existingMd = "# project notes\n\nLine I wrote myself.\n";
+    writeFileSync(resolve(tmpHome, "CLAUDE.md"), existingMd, "utf8");
+    await runCli(["install", "--skills", "--project", "--with-claude-md"], tmpHome);
+    const md = readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8");
+    expect(md).toMatch(/^# project notes/);
+    expect(md).toMatch(/Line I wrote myself\./);
+    expect(md).toMatch(/tslsp-cli:auto-nudge/);
   });
 
   it("rejects schema-violating args (--limit 0 fails .positive())", async () => {
