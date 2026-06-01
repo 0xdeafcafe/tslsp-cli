@@ -114,7 +114,7 @@ function suggestUnknownDaemonSub(sub: string): string {
   const picks = pickClosest(sub, DAEMON_SUBCOMMANDS);
   if (picks.length === 1) return `\ndid you mean: tslsp-cli daemon ${picks[0]}?`;
   if (picks.length > 1)
-    return `\ndid you mean one of: ${picks.map((p) => `daemon ${p}`).join(", ")}?`;
+    return `\ndid you mean one of: ${picks.map((p) => `tslsp-cli daemon ${p}`).join(", ")}?`;
   return "";
 }
 
