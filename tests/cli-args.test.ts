@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import {
   arrayInner,
   coerce,
@@ -8,94 +7,75 @@ import {
   isBoolean,
   parseArgs,
   typeHint,
-  unwrap,
 } from "../src/cli-args.js";
+import { s } from "../src/schema.js";
 import type { ToolDef } from "../src/tools.js";
 
-describe("unwrap", () => {
-  it("peels ZodOptional", () => {
-    const s = z.string().optional();
-    expect(unwrap(s)).toBeInstanceOf(z.ZodString);
-  });
-
-  it("peels ZodOptional + ZodNullable", () => {
-    const s = z.number().nullable().optional();
-    expect(unwrap(s)).toBeInstanceOf(z.ZodNumber);
-  });
-
-  it("does NOT walk into ZodArray (zod 4's .unwrap() returns the element)", () => {
-    const s = z.array(z.string()).optional();
-    const u = unwrap(s);
-    expect(u).toBeInstanceOf(z.ZodArray);
-    // would be ZodString if we mistakenly kept unwrapping
-    expect(u).not.toBeInstanceOf(z.ZodString);
-  });
-});
-
 describe("type predicates", () => {
-  it("isBoolean works through ZodOptional", () => {
-    expect(isBoolean(z.boolean().optional())).toBe(true);
-    expect(isBoolean(z.string().optional())).toBe(false);
+  it("isBoolean", () => {
+    expect(isBoolean(s.bool({ optional: true }))).toBe(true);
+    expect(isBoolean(s.str({ optional: true }))).toBe(false);
   });
 
-  it("isArray works through ZodOptional (the regression case)", () => {
-    expect(isArray(z.array(z.string()).optional())).toBe(true);
-    expect(isArray(z.string().optional())).toBe(false);
+  it("isArray", () => {
+    expect(isArray(s.arr(s.str({}), { optional: true }))).toBe(true);
+    expect(isArray(s.str({ optional: true }))).toBe(false);
   });
 });
 
 describe("arrayInner", () => {
-  it("returns the element schema for ZodArray", () => {
-    expect(arrayInner(z.array(z.string()))).toBeInstanceOf(z.ZodString);
+  it("returns the element schema for an array", () => {
+    expect(arrayInner(s.arr(s.str({})))).toMatchObject({ kind: "string" });
   });
-  it("returns the element schema for ZodOptional<ZodArray>", () => {
-    expect(arrayInner(z.array(z.number()).optional())).toBeInstanceOf(z.ZodNumber);
+  it("returns the element schema for an optional array", () => {
+    expect(arrayInner(s.arr(s.num({}), { optional: true }))).toMatchObject({ kind: "number" });
   });
 });
 
 describe("enumValues", () => {
   it("extracts the value list", () => {
-    const s = z.enum(["a", "b", "c"]);
-    expect(enumValues(s).sort()).toEqual(["a", "b", "c"]);
+    expect(enumValues(s.pick(["a", "b", "c"])).sort()).toEqual(["a", "b", "c"]);
   });
-  it("works through ZodOptional", () => {
-    const s = z.enum(["x", "y"]).optional();
-    expect(enumValues(s).sort()).toEqual(["x", "y"]);
+  it("works on an optional enum", () => {
+    expect(enumValues(s.pick(["x", "y"], { optional: true })).sort()).toEqual(["x", "y"]);
   });
 });
 
 describe("coerce", () => {
   it("parses numbers", () => {
-    expect(coerce(z.number(), "42")).toBe(42);
-    expect(coerce(z.number().optional(), "0")).toBe(0);
+    expect(coerce(s.num({}), "42")).toBe(42);
+    expect(coerce(s.num({ optional: true }), "0")).toBe(0);
+  });
+  it("rejects non-integer when int: true", () => {
+    expect(() => coerce(s.int({}), "3.14")).toThrow(/expected integer/);
   });
   it("throws on non-numeric", () => {
-    expect(() => coerce(z.number(), "abc")).toThrow(/expected number/);
+    expect(() => coerce(s.num({}), "abc")).toThrow(/expected number/);
   });
   it("parses booleans", () => {
-    expect(coerce(z.boolean(), "true")).toBe(true);
-    expect(coerce(z.boolean(), "1")).toBe(true);
-    expect(coerce(z.boolean(), "false")).toBe(false);
+    expect(coerce(s.bool({}), "true")).toBe(true);
+    expect(coerce(s.bool({}), "1")).toBe(true);
+    expect(coerce(s.bool({}), "false")).toBe(false);
   });
   it("validates enums", () => {
-    const s = z.enum(["a", "b"]);
-    expect(coerce(s, "a")).toBe("a");
-    expect(() => coerce(s, "z")).toThrow(/expected one of/);
+    const e = s.pick(["a", "b"]);
+    expect(coerce(e, "a")).toBe("a");
+    expect(() => coerce(e, "z")).toThrow(/expected one of/);
   });
   it("passes strings through", () => {
-    expect(coerce(z.string(), "hello")).toBe("hello");
+    expect(coerce(s.str({}), "hello")).toBe("hello");
   });
 });
 
 describe("typeHint", () => {
   it("renders enum values", () => {
-    expect(typeHint(z.enum(["a", "b", "c"]))).toBe("a|b|c");
+    expect(typeHint(s.pick(["a", "b", "c"]))).toBe("a|b|c");
   });
   it("renders number", () => {
-    expect(typeHint(z.number())).toBe("number");
+    expect(typeHint(s.num({}))).toBe("number");
   });
   it("renders arrays as value[,…]", () => {
-    expect(typeHint(z.array(z.string()).optional())).toMatch(/\[,…\]/);
+    expect(typeHint(s.arr(s.str({}), { optional: true }))).toMatch(/\[,…\]/);
   });
 });
 
@@ -105,10 +85,10 @@ const stringTool: ToolDef = {
   description: "",
   positional: ["q"],
   inputSchema: {
-    q: z.string().describe("query"),
-    file: z.string().optional().describe("file"),
-    limit: z.number().int().optional().describe("limit"),
-    flag: z.boolean().optional().describe("flag"),
+    q: s.str({ description: "query" }),
+    file: s.str({ optional: true, description: "file" }),
+    limit: s.int({ optional: true, description: "limit" }),
+    flag: s.bool({ optional: true, description: "flag" }),
   },
   handler: async () => ({ text: "" }),
 };
@@ -118,8 +98,8 @@ const arrayTool: ToolDef = {
   description: "",
   positional: ["files"],
   inputSchema: {
-    files: z.array(z.string()).describe("files"),
-    symbols: z.array(z.string()).optional().describe("symbols"),
+    files: s.arr(s.str({}), { description: "files" }),
+    symbols: s.arr(s.str({}), { optional: true, description: "symbols" }),
   },
   handler: async () => ({ text: "" }),
 };
@@ -144,7 +124,7 @@ describe("parseArgs", () => {
     const tool: ToolDef = {
       name: "t",
       description: "",
-      inputSchema: { new_name: z.string().describe("") },
+      inputSchema: { new_name: s.str({ description: "" }) },
       handler: async () => ({ text: "" }),
     };
     expect(parseArgs(tool, ["--new-name", "X"])).toEqual({ new_name: "X" });

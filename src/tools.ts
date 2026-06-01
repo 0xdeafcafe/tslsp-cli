@@ -1,5 +1,4 @@
 import { isAbsolute, resolve } from "node:path";
-import { z } from "zod";
 import {
   allKindNames,
   capHover,
@@ -32,6 +31,7 @@ import { LocatorError, resolveLocator, SymbolLocator } from "./locator.js";
 import { performFileRename } from "./rename-files.js";
 import { applyWorkspaceEdit, summarizeRename } from "./rename.js";
 import { expandFileArgs } from "./file-args.js";
+import { s, type Infer, type Schema } from "./schema.js";
 import { LspPool } from "./workspace.js";
 
 export interface ToolResult {
@@ -44,21 +44,23 @@ export interface ToolResult {
   empty?: boolean;
 }
 
-export interface ToolDef<I extends z.ZodRawShape = z.ZodRawShape> {
+export type Shape = Record<string, Schema>;
+
+export interface ToolDef<I extends Shape = Shape> {
   name: string;
   /** One-line description. Keep tight; surfaced as the CLI command help. */
   description: string;
-  /** Per-tool zod shape. Field descriptions double as CLI flag help. */
+  /** Per-tool schema shape. Field descriptions double as CLI flag help. */
   inputSchema: I;
   /** Optional: which fields can be passed as positional args, in order. */
   positional?: (keyof I & string)[];
-  handler: (input: z.infer<z.ZodObject<I>>, ctx: ToolContext) => Promise<ToolResult>;
+  handler: (input: Infer<I>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
 /** Wraps a tool definition so TypeScript captures each tool's inputSchema
  * generic — otherwise `const x: ToolDef = {...}` collapses field types to
  * unknown and every handler destructure fails to compile. */
-function defineTool<I extends z.ZodRawShape>(d: ToolDef<I>): ToolDef<I> {
+function defineTool<I extends Shape>(d: ToolDef<I>): ToolDef<I> {
   return d;
 }
 
@@ -68,18 +70,17 @@ export interface ToolContext {
 }
 
 const locatorShape = {
-  file: z.string().optional().describe("File path."),
-  line: z.number().int().nonnegative().optional().describe("Zero-based line."),
-  character: z
-    .number()
-    .int()
-    .nonnegative()
-    .optional()
-    .describe("Zero-based column. Use with line."),
-  symbol: z
-    .string()
-    .optional()
-    .describe("Identifier text. Workspace-wide alone, or scan a line with file+line."),
+  file: s.str({ optional: true, description: "File path." }),
+  line: s.int({ nonnegative: true, optional: true, description: "Zero-based line." }),
+  character: s.int({
+    nonnegative: true,
+    optional: true,
+    description: "Zero-based column. Use with line.",
+  }),
+  symbol: s.str({
+    optional: true,
+    description: "Identifier text. Workspace-wide alone, or scan a line with file+line.",
+  }),
 };
 
 const ok = (text: string): ToolResult => ({ text });
@@ -194,12 +195,11 @@ export async function fanout<T>(
 }
 
 const symbolsField = {
-  symbols: z
-    .array(z.string().min(1))
-    .optional()
-    .describe(
+  symbols: s.arr(s.str({ min: 1 }), {
+    optional: true,
+    description:
       "Batch: list of symbol names. Runs each as a workspace query in parallel and labels output.",
-    ),
+  }),
 };
 
 // ---- tool defs ----
@@ -253,21 +253,21 @@ const findSymbol = defineTool({
     "Search the workspace for symbols by name. Returns `path:line  kind name`. Fuzzy match. Pass multiple queries (positional or `--queries a,b,c`). Filter noise with `--kind` and `--container`.",
   positional: ["queries"],
   inputSchema: {
-    query: z.string().min(1).optional().describe("Single substring to match."),
-    queries: z
-      .array(z.string().min(1))
-      .optional()
-      .describe("Batch: list of substrings. Runs each as a workspace query."),
-    file: z.string().optional().describe("Restrict to this file."),
-    limit: z.number().int().positive().max(200).optional().describe("Default 50."),
-    kind: z
-      .array(z.string().min(1))
-      .optional()
-      .describe("Keep only these LSP symbol kinds (class,function,interface,method,variable,…)."),
-    container: z
-      .string()
-      .optional()
-      .describe("Only symbols whose containerName contains this substring (case-insensitive)."),
+    query: s.str({ min: 1, optional: true, description: "Single substring to match." }),
+    queries: s.arr(s.str({ min: 1 }), {
+      optional: true,
+      description: "Batch: list of substrings. Runs each as a workspace query.",
+    }),
+    file: s.str({ optional: true, description: "Restrict to this file." }),
+    limit: s.int({ positive: true, max: 200, optional: true, description: "Default 50." }),
+    kind: s.arr(s.str({ min: 1 }), {
+      optional: true,
+      description: "Keep only these LSP symbol kinds (class,function,interface,method,variable,…).",
+    }),
+    container: s.str({
+      optional: true,
+      description: "Only symbols whose containerName contains this substring (case-insensitive).",
+    }),
   },
   handler: async ({ query, queries, file, limit, kind, container }, ctx) => {
     const list = [...(queries ?? []), ...(query ? [query] : [])];
@@ -388,14 +388,15 @@ const references = defineTool({
   inputSchema: {
     ...locatorShape,
     ...symbolsField,
-    include_declaration: z.boolean().optional().describe("Include declaration. Default true."),
-    limit: z.number().int().positive().max(500).optional().describe("Default 200."),
-    summary: z
-      .boolean()
-      .optional()
-      .describe(
-        `Group refs by file (\`path (N): lines\`); drops snippets. Auto-flips on when refs > ${REFERENCES_AUTO_SUMMARY_THRESHOLD}; pass \`--summary=false\` to keep snippets.`,
-      ),
+    include_declaration: s.bool({
+      optional: true,
+      description: "Include declaration. Default true.",
+    }),
+    limit: s.int({ positive: true, max: 500, optional: true, description: "Default 200." }),
+    summary: s.bool({
+      optional: true,
+      description: `Group refs by file (\`path (N): lines\`); drops snippets. Auto-flips on when refs > ${REFERENCES_AUTO_SUMMARY_THRESHOLD}; pass \`--summary=false\` to keep snippets.`,
+    }),
   },
   handler: async ({ symbols, include_declaration, limit, summary, ...loc }, ctx) => {
     const opts: ReferencesOpts = { include_declaration, limit, summary };
@@ -504,8 +505,8 @@ const rename = defineTool({
   description: "Type-aware symbol rename across all files. Pass dry_run for a preview.",
   inputSchema: {
     ...locatorShape,
-    new_name: z.string().min(1).describe("New identifier."),
-    dry_run: z.boolean().optional().describe("Preview without writing."),
+    new_name: s.str({ min: 1, description: "New identifier." }),
+    dry_run: s.bool({ optional: true, description: "Preview without writing." }),
   },
   handler: async ({ new_name, dry_run, ...loc }, ctx) =>
     withLocator(ctx, loc as SymbolLocator, async ({ client, root, uri, position }) => {
@@ -532,9 +533,12 @@ const renameFile = defineTool({
     "Move/rename a file or folder and update every import that references it. Pass dry_run to preview.",
   positional: ["old_path", "new_path"],
   inputSchema: {
-    old_path: z.string().min(1).describe("Existing file or folder path."),
-    new_path: z.string().min(1).describe("Destination path."),
-    dry_run: z.boolean().optional().describe("Preview moves + import changes without writing."),
+    old_path: s.str({ min: 1, description: "Existing file or folder path." }),
+    new_path: s.str({ min: 1, description: "Destination path." }),
+    dry_run: s.bool({
+      optional: true,
+      description: "Preview moves + import changes without writing.",
+    }),
   },
   handler: async ({ old_path, new_path, dry_run }, ctx) => {
     try {
@@ -580,10 +584,10 @@ const hover = defineTool({
   inputSchema: {
     ...locatorShape,
     ...symbolsField,
-    full: z
-      .boolean()
-      .optional()
-      .describe("Skip the 800-char hover cap — return the entire JSDoc/type blob."),
+    full: s.bool({
+      optional: true,
+      description: "Skip the 800-char hover cap — return the entire JSDoc/type blob.",
+    }),
   },
   handler: async ({ symbols, full, ...loc }, ctx) => {
     if (symbols && symbols.length) {
@@ -639,21 +643,21 @@ const outline = defineTool({
     "Indented declaration outline of one or more files. Accepts globs and directories — `outline 'src/**/*.ts'` or `outline src/api/`. Tighten with `--depth` / `--kind`.",
   positional: ["files"],
   inputSchema: {
-    file: z.string().optional().describe("Single file path."),
-    files: z
-      .array(z.string())
-      .optional()
-      .describe("Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`)."),
-    depth: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Max nesting depth. 0 = top-level only."),
-    kind: z
-      .array(z.string().min(1))
-      .optional()
-      .describe("Keep only these kinds (class,function,interface,method,…)."),
+    file: s.str({ optional: true, description: "Single file path." }),
+    files: s.arr(s.str({}), {
+      optional: true,
+      description:
+        "Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`).",
+    }),
+    depth: s.int({
+      nonnegative: true,
+      optional: true,
+      description: "Max nesting depth. 0 = top-level only.",
+    }),
+    kind: s.arr(s.str({ min: 1 }), {
+      optional: true,
+      description: "Keep only these kinds (class,function,interface,method,…).",
+    }),
   },
   handler: async ({ file, files, depth, kind }, ctx) => {
     const inputs = files && files.length ? files : file ? [file] : [];
@@ -739,15 +743,16 @@ const diagnostics = defineTool({
     "Type errors + warnings. Accepts files, directories, or globs (`diagnostics 'src/**/*.ts'`). With no args, aggregates across every open file.",
   positional: ["files"],
   inputSchema: {
-    file: z.string().optional().describe("Single file path."),
-    files: z
-      .array(z.string())
-      .optional()
-      .describe("Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`)."),
-    severity: z
-      .enum(["error", "warning", "info", "all"])
-      .optional()
-      .describe("Default warning+error."),
+    file: s.str({ optional: true, description: "Single file path." }),
+    files: s.arr(s.str({}), {
+      optional: true,
+      description:
+        "Batch: literal paths, directories (recursive walk), or globs (`'src/**/*.ts'`).",
+    }),
+    severity: s.pick(["error", "warning", "info", "all"] as const, {
+      optional: true,
+      description: "Default warning+error.",
+    }),
   },
   handler: async ({ file, files, severity }, ctx) => {
     const minSev = severityFilter(severity ?? "warning");
@@ -786,7 +791,10 @@ const callHierarchy = defineTool({
     "Callers and/or callees of the function at a position. direction: incoming | outgoing | both (default both).",
   inputSchema: {
     ...locatorShape,
-    direction: z.enum(["incoming", "outgoing", "both"]).optional().describe("Default both."),
+    direction: s.pick(["incoming", "outgoing", "both"] as const, {
+      optional: true,
+      description: "Default both.",
+    }),
   },
   handler: async ({ direction, ...loc }, ctx) =>
     withLocator(ctx, loc as SymbolLocator, async ({ client, root, uri, position }) => {
@@ -831,37 +839,33 @@ const codeAction = defineTool({
   description:
     "List or apply code actions (quick fixes, refactors, organize-imports). `apply: N` applies an index from the most recent list — indices aren't stable across calls.",
   inputSchema: {
-    file: z.string().describe("File path."),
-    line: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Zero-based line. Omit for whole-file actions."),
-    character: z.number().int().nonnegative().optional().describe("Zero-based column."),
-    end_line: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Zero-based end line. Defaults to line."),
-    end_character: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Zero-based end column. Defaults to character."),
-    kind: z
-      .string()
-      .optional()
-      .describe("Filter by action kind, e.g. source.organizeImports, quickfix."),
-    only_preferred: z.boolean().optional().describe("Only return preferred actions."),
-    apply: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Index of an action to apply (writes to disk)."),
+    file: s.str({ description: "File path." }),
+    line: s.int({
+      nonnegative: true,
+      optional: true,
+      description: "Zero-based line. Omit for whole-file actions.",
+    }),
+    character: s.int({ nonnegative: true, optional: true, description: "Zero-based column." }),
+    end_line: s.int({
+      nonnegative: true,
+      optional: true,
+      description: "Zero-based end line. Defaults to line.",
+    }),
+    end_character: s.int({
+      nonnegative: true,
+      optional: true,
+      description: "Zero-based end column. Defaults to character.",
+    }),
+    kind: s.str({
+      optional: true,
+      description: "Filter by action kind, e.g. source.organizeImports, quickfix.",
+    }),
+    only_preferred: s.bool({ optional: true, description: "Only return preferred actions." }),
+    apply: s.int({
+      nonnegative: true,
+      optional: true,
+      description: "Index of an action to apply (writes to disk).",
+    }),
   },
   handler: async (
     { file, line, character, end_line, end_character, kind, only_preferred, apply },
@@ -947,8 +951,8 @@ function overlaps(
 }
 
 // `ToolDef<any>` is intentional: each tool's handler is contravariant in its
-// input shape, so a `ToolDef<{query: ZodString}>` is not assignable to
-// `ToolDef<ZodRawShape>`. The `defineTool` helper still gives each individual
+// input shape, so a `ToolDef<{ query: StrSchema }>` is not assignable to
+// `ToolDef<Shape>`. The `defineTool` helper still gives each individual
 // declaration full per-tool type-checking — `any` only widens the array slot.
 export const TOOLS: ToolDef<any>[] = [
   findSymbol,

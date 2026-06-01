@@ -1,95 +1,73 @@
-import { z } from "zod";
+import type { ArrSchema, EnumSchema, NumSchema, Schema } from "./schema.js";
 import type { ToolDef } from "./tools.js";
 
-const WRAPPER_NAMES = new Set([
-  "ZodOptional",
-  "ZodNullable",
-  "ZodDefault",
-  "ZodReadonly",
-  "ZodCatch",
-]);
+export function isBoolean(s: Schema): boolean {
+  return s.kind === "boolean";
+}
 
-/** Peel optional-like wrappers. Stops at the first concrete type — important
- * because zod 4's `ZodArray.unwrap()` returns the element, not itself. */
-export function unwrap(ty: z.ZodTypeAny): z.ZodTypeAny {
-  let cur: any = ty;
-  while (cur && WRAPPER_NAMES.has(cur.constructor?.name) && typeof cur.unwrap === "function") {
-    try {
-      cur = cur.unwrap();
-    } catch {
-      break;
+export function isArray(s: Schema): boolean {
+  return s.kind === "array";
+}
+
+export function arrayInner(s: Schema): Schema {
+  return s.kind === "array" ? (s as ArrSchema).element : s;
+}
+
+export function enumValues(s: Schema): string[] {
+  return s.kind === "enum" ? [...(s as EnumSchema).values] : [];
+}
+
+/** Coerce a string token from argv into the schema's runtime type. Throws
+ * with a human-readable message — `parseArgs` lets it bubble so the CLI
+ * dispatcher can attach the tool-help footer. */
+export function coerce(s: Schema, raw: string): unknown {
+  switch (s.kind) {
+    case "number": {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) throw new Error(`expected number, got "${raw}"`);
+      if ((s as NumSchema).int && !Number.isInteger(n)) {
+        throw new Error(`expected integer, got "${raw}"`);
+      }
+      return n;
     }
-  }
-  return cur;
-}
-
-export function isBoolean(ty: z.ZodTypeAny): boolean {
-  return unwrap(ty) instanceof z.ZodBoolean;
-}
-
-export function isArray(ty: z.ZodTypeAny): boolean {
-  return unwrap(ty) instanceof z.ZodArray;
-}
-
-export function arrayInner(ty: z.ZodTypeAny): z.ZodTypeAny {
-  const root = unwrap(ty) as any;
-  // zod 4: .element; zod 3: ._def.type. Fall back to the schema itself so
-  // string coercion still works for a malformed shape.
-  return root.element ?? root._def?.type ?? root.def?.element ?? root;
-}
-
-export function enumValues(ty: z.ZodTypeAny): string[] {
-  const root = unwrap(ty) as any;
-  const v = root._def?.values ?? root.options ?? root.enum;
-  if (Array.isArray(v)) return v;
-  if (v && typeof v === "object")
-    return Object.values(v).filter((x): x is string => typeof x === "string");
-  const entries = root.def?.entries;
-  if (entries && typeof entries === "object")
-    return Object.values(entries).filter((x): x is string => typeof x === "string");
-  return [];
-}
-
-export function coerce(ty: z.ZodTypeAny, raw: string): unknown {
-  const root = unwrap(ty);
-  if (root instanceof z.ZodNumber) {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) throw new Error(`expected number, got "${raw}"`);
-    return n;
-  }
-  if (root instanceof z.ZodBoolean) {
-    return raw === "true" || raw === "1";
-  }
-  if (root instanceof z.ZodEnum) {
-    const values = enumValues(ty);
-    if (values.length && !values.includes(raw)) {
-      throw new Error(`expected one of ${values.join("|")}, got "${raw}"`);
+    case "boolean":
+      // Only the `--flag=VAL` form lands here. Bare `--flag` is set to true
+      // by parseArgs without round-tripping through coerce.
+      return raw === "true" || raw === "1";
+    case "enum": {
+      const values = (s as EnumSchema).values;
+      if (!values.includes(raw)) {
+        throw new Error(`expected one of ${values.join("|")}, got "${raw}"`);
+      }
+      return raw;
     }
-    return raw;
+    default:
+      return raw;
   }
-  return raw;
 }
 
-export function typeHint(ty: z.ZodTypeAny): string {
-  const root = unwrap(ty);
-  if (root instanceof z.ZodArray) return `${typeHint(arrayInner(ty))}[,…]`;
-  if (root instanceof z.ZodNumber) return "number";
-  if (root instanceof z.ZodEnum) {
-    const values = enumValues(ty);
-    return values.length ? values.join("|") : "enum";
+export function typeHint(s: Schema): string {
+  switch (s.kind) {
+    case "array":
+      return `${typeHint(arrayInner(s))}[,…]`;
+    case "number":
+      return "number";
+    case "enum":
+      return (s as EnumSchema).values.join("|");
+    default:
+      return "value";
   }
-  return "value";
 }
 
-export function fieldDesc(ty: z.ZodTypeAny): string {
-  return (ty as any)._def?.description ?? (ty as any).description ?? "";
+export function fieldDesc(s: Schema): string {
+  return s.description ?? "";
 }
 
-/** Parse a tool's argv into a record matching its zod input schema. Throws
- * with a human-readable message on malformed input. */
+/** Parse a tool's argv into a record matching its schema. Throws with a
+ * human-readable message on malformed input. */
 export function parseArgs(tool: ToolDef, argv: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const shape = tool.inputSchema as Record<string, z.ZodTypeAny>;
+  const shape = tool.inputSchema as Record<string, Schema>;
   const positional = (tool.positional ?? []) as string[];
   let posIdx = 0;
 
