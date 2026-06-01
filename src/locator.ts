@@ -73,7 +73,7 @@ export async function resolveLocator(
     const m = re.exec(lineText);
     if (!m) {
       throw new LocatorError(
-        `symbol "${loc.symbol}" not found on line ${loc.line} of ${relPath(filePath, root)}`,
+        buildSymbolNotOnLineError(loc.symbol, loc.line, lines, filePath, root),
       );
     }
     return { client, root, filePath, uri, position: { line: loc.line, character: m.index } };
@@ -160,4 +160,35 @@ export async function locateIdentifierInRange(
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Build the recovery message for `--file F --line L --symbol X` when X is not
+ * on line L. Off-by-one (forgot lines are zero-based) and the rest-of-file
+ * symbol scan both come up empty in the original error — surface both.
+ *
+ * Exported for unit tests; consumers should go through `resolveLocator`. */
+export function buildSymbolNotOnLineError(
+  symbol: string,
+  line: number,
+  lines: string[],
+  filePath: string,
+  root: string,
+): string {
+  const re = new RegExp(`\\b${escapeRegex(symbol)}\\b`);
+  const hits: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i] ?? "")) hits.push(i);
+  }
+  const header = `symbol "${symbol}" not found on line ${line} of ${relPath(filePath, root)} (zero-based; first line is 0)`;
+  if (!hits.length) {
+    return `${header}\n"${symbol}" does not appear anywhere in this file. Drop --line and pass --symbol alone, or use --file + --line + --character for an exact position.`;
+  }
+  // Closest hits first.
+  const near = [...hits].sort((a, b) => Math.abs(a - line) - Math.abs(b - line)).slice(0, 5);
+  const nearestDelta = Math.abs(near[0]! - line);
+  const list = `found "${symbol}" on line${hits.length === 1 ? "" : "s"}: ${near.join(", ")}`;
+  // Only push a "did you mean --line N?" when the nearest is within ±3 — far
+  // hits are probably unrelated uses, not the declaration the user was after.
+  const guess = nearestDelta > 0 && nearestDelta <= 3 ? `\ndid you mean --line ${near[0]}?` : "";
+  return `${header}\n${list}${guess}`;
 }

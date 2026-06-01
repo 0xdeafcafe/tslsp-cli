@@ -59,10 +59,119 @@ export async function runCli(argv: string[]): Promise<number> {
 
   const tool = getTool(cmd);
   if (!tool) {
-    process.stderr.write(`unknown command: ${cmd}\n\n${rootHelp()}\n`);
+    const hint = suggestUnknownCommand(cmd);
+    if (hint) {
+      process.stderr.write(`unknown command: ${cmd}\n${hint}\n`);
+    } else {
+      process.stderr.write(`unknown command: ${cmd}\n\n${rootHelp()}\n`);
+    }
     return 2;
   }
   return runTool(tool, args, { useDaemon, useJson, useVerbose, sessionName });
+}
+
+const DAEMON_SUBCOMMANDS = ["start", "stop", "restart", "list", "kill-all"];
+
+/** Format a recovery hint for `unknown command: <cmd>`. Returns "" when we
+ * have nothing useful to say — the caller falls back to printing rootHelp().
+ *
+ * Three tiers, in order:
+ *   1. The user doubled the binary name (`tslsp-cli tslsp-cli …`,
+ *      `npx … tslsp-cli tslsp-cli …`). Show the correct invocation.
+ *   2. They typed a daemon subcommand at the top level (`tslsp-cli restart`).
+ *      Point at `tslsp-cli daemon <sub>` and disambiguate `--daemon` (flag) vs
+ *      `daemon` (subcommand).
+ *   3. Generic typo — pick the closest tool name by edit distance. */
+function suggestUnknownCommand(cmd: string): string {
+  if (cmd === "tslsp" || cmd === "tslsp-cli") {
+    return [
+      "",
+      `tip: drop the doubled \`${cmd}\` after the binary. Try:`,
+      "  tslsp-cli <command> [args]",
+      "  npx --no-install @0xdeafcafe/tslsp-cli <command> [args]",
+    ].join("\n");
+  }
+  if (DAEMON_SUBCOMMANDS.includes(cmd)) {
+    return [
+      "",
+      `tip: daemon management lives under the \`daemon\` subcommand. Try:`,
+      `  tslsp-cli daemon ${cmd}`,
+      "(`--daemon` is a global flag that routes tool calls through a warm daemon; it is not a daemon-management prefix.)",
+    ].join("\n");
+  }
+  const candidates = new Set<string>(["daemon", "install"]);
+  for (const t of TOOLS) {
+    candidates.add(t.name);
+    candidates.add(t.name.replace(/_/g, "-"));
+  }
+  const picks = pickClosest(cmd, [...candidates]);
+  if (picks.length === 1) return `\ndid you mean: tslsp-cli ${picks[0]}?`;
+  if (picks.length > 1) return `\ndid you mean one of: ${picks.join(", ")}?`;
+  return "";
+}
+
+function suggestUnknownDaemonSub(sub: string): string {
+  const picks = pickClosest(sub, DAEMON_SUBCOMMANDS);
+  if (picks.length === 1) return `\ndid you mean: tslsp-cli daemon ${picks[0]}?`;
+  if (picks.length > 1)
+    return `\ndid you mean one of: ${picks.map((p) => `daemon ${p}`).join(", ")}?`;
+  return "";
+}
+
+/** Levenshtein with early-exit cap; returns Infinity once the running row min
+ * exceeds the cap. */
+function editDistance(a: string, b: string, cap = 5): number {
+  if (a === b) return 0;
+  const al = a.length;
+  const bl = b.length;
+  if (Math.abs(al - bl) > cap) return Infinity;
+  let prev = Array.from({ length: bl + 1 }, (_, j) => j);
+  let curr = Array.from<number>({ length: bl + 1 });
+  for (let i = 1; i <= al; i++) {
+    curr[0] = i;
+    let rowMin = i;
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const del = (prev[j] ?? cap + 1) + 1;
+      const ins = (curr[j - 1] ?? cap + 1) + 1;
+      const sub = (prev[j - 1] ?? cap + 1) + cost;
+      const v = Math.min(del, ins, sub);
+      curr[j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > cap) return Infinity;
+    [prev, curr] = [curr, prev];
+  }
+  return prev[bl] ?? Infinity;
+}
+
+function pickClosest(input: string, candidates: string[], max = 3): string[] {
+  const lower = input.toLowerCase();
+  // Cap distance at ~half the input length so we don't suggest wildly unrelated
+  // commands for short typos (`x` should not "did you mean: rename?").
+  const maxD = Math.max(1, Math.ceil(input.length / 2));
+  const scored = candidates
+    .map((c) => ({ name: c, d: editDistance(lower, c.toLowerCase(), maxD) }))
+    .filter((x) => Number.isFinite(x.d) && x.d <= maxD)
+    .sort((a, b) => a.d - b.d || a.name.localeCompare(b.name));
+  if (!scored.length) return [];
+  // Only keep candidates tied at the minimum distance. Without this,
+  // `defnition` (intended: `definition`, d=1) would also surface `code_action`
+  // (d=5) because shared characters in order ("detion") let Levenshtein stay
+  // under the cap — a real and confusing edge case the closeness rank hides.
+  const minD = scored[0]!.d;
+  const tied = scored.filter((x) => x.d === minD);
+  // De-dupe variants (e.g. `find_symbol` vs `find-symbol` both rank — keep one).
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of tied) {
+    const key = s.name.replace(/_/g, "-");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s.name);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 /** Strip and report a boolean flag (e.g. `--daemon`). */
@@ -300,7 +409,12 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
     return 0;
   }
 
-  process.stderr.write(`unknown daemon subcommand: ${sub}\n\n${daemonHelp()}\n`);
+  const hint = suggestUnknownDaemonSub(sub);
+  if (hint) {
+    process.stderr.write(`unknown daemon subcommand: ${sub}${hint}\n`);
+  } else {
+    process.stderr.write(`unknown daemon subcommand: ${sub}\n\n${daemonHelp()}\n`);
+  }
   return 2;
 }
 

@@ -151,8 +151,10 @@ If the thing you're acting on is an identifier in TS/JS under a `tsconfig.json`,
 If `tslsp-cli` isn't on PATH:
 
 ```bash
-npx --no-install @0xdeafcafe/tslsp-cli tslsp-cli <command> [...]
+npx --no-install @0xdeafcafe/tslsp-cli <command> [...]
 ```
+
+Don't repeat the binary name after the package — `npx @0xdeafcafe/tslsp-cli` already resolves to the `tslsp-cli` bin, so `npx … @0xdeafcafe/tslsp-cli tslsp-cli find-symbol …` will exit with `unknown command: tslsp-cli`.
 
 ## Make Claude reach for this without thinking
 

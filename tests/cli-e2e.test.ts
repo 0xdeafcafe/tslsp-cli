@@ -136,6 +136,39 @@ describe("CLI e2e", () => {
     expect(stderr).toMatch(/unknown command: nope/);
   });
 
+  it("hints when the doubled binary name is the subcommand (`tslsp-cli tslsp-cli ...`)", async () => {
+    // SKILL.md used to teach `npx ... @0xdeafcafe/tslsp-cli tslsp-cli <cmd>`,
+    // which lands here as `cmd === "tslsp-cli"`. Hint should steer them right.
+    const { code, stderr } = await runCli(["tslsp-cli", "find-symbol", "add"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/unknown command: tslsp-cli/);
+    expect(stderr).toMatch(/drop the doubled `tslsp-cli`/);
+    expect(stderr).toMatch(/npx --no-install @0xdeafcafe\/tslsp-cli <command>/);
+  });
+
+  it("hints when a daemon subcommand is used at the top level (`tslsp-cli restart`)", async () => {
+    const { code, stderr } = await runCli(["restart"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/unknown command: restart/);
+    expect(stderr).toMatch(/tslsp-cli daemon restart/);
+    // Disambiguates `--daemon` (global flag) vs `daemon` (subcommand).
+    expect(stderr).toMatch(/`--daemon` is a global flag/);
+  });
+
+  it("did-you-mean for a tool-name typo", async () => {
+    const { code, stderr } = await runCli(["defnition"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/unknown command: defnition/);
+    expect(stderr).toMatch(/did you mean: tslsp-cli definition\?/);
+  });
+
+  it("did-you-mean for a daemon subcommand typo", async () => {
+    const { code, stderr } = await runCli(["daemon", "staat"]);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/unknown daemon subcommand: staat/);
+    expect(stderr).toMatch(/did you mean: tslsp-cli daemon start\?/);
+  });
+
   it("find-symbol via positional finds the function", async () => {
     const { code, stdout } = await runCli(["find-symbol", "add"]);
     expect(code).toBe(0);
