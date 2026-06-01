@@ -181,7 +181,7 @@ export function buildSymbolNotOnLineError(
   }
   const header = `symbol "${symbol}" not found on line ${line} of ${relPath(filePath, root)} (zero-based; first line is 0)`;
   if (!hits.length) {
-    return `${header}\n"${symbol}" does not appear anywhere in this file. Drop --line and pass --symbol alone, or use --file + --line + --character for an exact position.`;
+    return `${header}\n"${symbol}" does not appear anywhere in this file. Drop --line and pass --symbol alone (optionally with --file to scope to a single file), or use --file + --line + --character for an exact position.`;
   }
   // Closest hits first.
   const near = [...hits].sort((a, b) => Math.abs(a - line) - Math.abs(b - line)).slice(0, 5);
