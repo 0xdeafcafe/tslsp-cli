@@ -195,6 +195,17 @@ describe("CLI e2e", () => {
     expect(stdout).toMatch(/=== .*index\.ts ===/);
   });
 
+  it("outline emits the format preamble once and uses the compact line-prefix shape", async () => {
+    const { code, stdout } = await runCli(["outline", resolve(workspace, "src/math.ts")]);
+    expect(code).toBe(0);
+    // Single preamble at the top — never per-file or repeated.
+    const preambleCount = (stdout.match(/# format: <line>: <kind> <name>/g) ?? []).length;
+    expect(preambleCount).toBe(1);
+    // Compact form: leading "N: " line number, no trailing "(line N)".
+    expect(stdout).toMatch(/^1: function add/m);
+    expect(stdout).not.toMatch(/\(line \d+\)/);
+  });
+
   it("find-symbol accepts multi-positional queries and labels each block", async () => {
     const { code, stdout } = await runCli(["find-symbol", "add", "double"]);
     expect(code).toBe(0);

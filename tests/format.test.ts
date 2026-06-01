@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allKindNames,
+  capHover,
   formatDiagnostic,
   formatHover,
   formatLocations,
@@ -115,9 +116,12 @@ describe("formatOutline", () => {
       },
     ];
     const out = formatOutline(symbols);
-    expect(out).toContain("class Outer");
-    expect(out).toMatch(/^  method method/m);
-    expect(out).toMatch(/\(line 1\)/);
+    // Compact line-prefix form: indent + "N: kind name". Indent still encodes
+    // nesting; the trailing "(line N)" suffix has moved to the front and lost
+    // the parens, saving ~6 chars per row.
+    expect(out).toMatch(/^1: class Outer/m);
+    expect(out).toMatch(/^  2: method method/m);
+    expect(out).not.toMatch(/\(line \d+\)/);
   });
 
   it("returns (empty) for no symbols", () => {
@@ -142,7 +146,7 @@ describe("formatOutline", () => {
       },
     ];
     const out = formatOutline(symbols, { maxDepth: 0 });
-    expect(out).toContain("class Outer");
+    expect(out).toMatch(/^1: class Outer/m);
     expect(out).not.toContain("method method");
   });
 
@@ -166,7 +170,36 @@ describe("formatOutline", () => {
     // Keep methods only — class header is dropped but children still walked.
     const out = formatOutline(symbols, { kinds: new Set([6]) });
     expect(out).not.toContain("class Outer");
-    expect(out).toContain("method method");
+    expect(out).toMatch(/^2: method method/m);
+  });
+});
+
+describe("capHover", () => {
+  it("returns the input untouched when under the cap", () => {
+    expect(capHover("short doc", false, 800)).toBe("short doc");
+  });
+
+  it("truncates and appends a chars-truncated footer when over the cap", () => {
+    const long = "x".repeat(2000);
+    const out = capHover(long, false, 800);
+    expect(out.length).toBeLessThan(long.length);
+    expect(out).toMatch(/…\+\d+ chars truncated \(pass --full to disable\)/);
+  });
+
+  it("closes an open code fence at the truncation point", () => {
+    // Opening fence at the start; cap inside the fence body. The closer must
+    // be appended or the trailing markdown renders as a half-open block.
+    const text = "```ts\n" + "x".repeat(2000);
+    const out = capHover(text, false, 50);
+    // Strip the truncation footer for the fence check.
+    const beforeFooter = out.split("\n…+")[0]!;
+    const fenceCount = (beforeFooter.match(/```/g) ?? []).length;
+    expect(fenceCount % 2).toBe(0);
+  });
+
+  it("returns the full text when full=true even if over the cap", () => {
+    const long = "x".repeat(2000);
+    expect(capHover(long, true, 800)).toBe(long);
   });
 });
 

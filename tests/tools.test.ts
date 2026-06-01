@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { fanout, type ToolResult } from "../src/tools.js";
+import {
+  fanout,
+  REFERENCES_AUTO_SUMMARY_THRESHOLD,
+  shouldAutoSummarize,
+  type ToolResult,
+} from "../src/tools.js";
 
 // Direct unit tests for fanout's empty-collapse behavior. Exercising this via
 // the real CLI requires a deterministic tool path with real findings AND real
@@ -77,5 +82,20 @@ describe("fanout", () => {
     expect(out.text).toMatch(/=== a ===/);
     expect(out.text).toMatch(/explode/);
     expect(out.isError).toBe(true);
+  });
+});
+
+describe("shouldAutoSummarize", () => {
+  const T = REFERENCES_AUTO_SUMMARY_THRESHOLD;
+
+  it("flips on once the ref count exceeds the threshold and summary is unset", () => {
+    expect(shouldAutoSummarize(undefined, T)).toBe(false);
+    expect(shouldAutoSummarize(undefined, T + 1)).toBe(true);
+    expect(shouldAutoSummarize(undefined, T * 100)).toBe(true);
+  });
+
+  it("never auto-flips when summary was set explicitly either way", () => {
+    expect(shouldAutoSummarize(true, T * 100)).toBe(false);
+    expect(shouldAutoSummarize(false, T * 100)).toBe(false);
   });
 });
