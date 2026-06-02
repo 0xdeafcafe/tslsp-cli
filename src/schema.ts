@@ -2,14 +2,16 @@
  * Tiny schema + validator that replaces zod for this CLI's narrow needs.
  *
  * What we actually used from zod: string/number/boolean/array/enum, the
- * constraints `min`/`max`/`int`/`positive`/`nonnegative`/`minLength`,
- * `optional`, `describe`, runtime `parse`, and `z.infer`. No transforms,
- * refinements, pipes, discriminated unions, lazy/recursive, or branded types.
+ * constraints `min`/`max`/`int`/`positive`/`nonnegative`, `optional`,
+ * `describe`, runtime `parse`, and `z.infer`. No transforms, refinements,
+ * pipes, discriminated unions, lazy/recursive, or branded types.
  *
  * Schemas are plain tagged structs — easy to inspect (CLI arg parser walks
  * `s.kind` instead of doing `instanceof z.ZodArray`) and easy to type-thread
  * (`Infer<typeof shape>` reads literal `optional: true` markers).
  */
+
+// --- schema kinds ---
 
 export interface StrSchema {
   kind: "string";
@@ -56,40 +58,50 @@ export interface EnumSchema<V extends string = string> {
 
 export type Schema = StrSchema | NumSchema | BoolSchema | ArrSchema | EnumSchema;
 
+// Per-kind "opts without kind" aliases keep the factory signatures readable
+// and reusable below. Every field on each schema except `kind` is optional,
+// so an empty `{}` always satisfies the constraint.
+type StrOpts = Omit<StrSchema, "kind">;
+type NumOpts = Omit<NumSchema, "kind">;
+type BoolOpts = Omit<BoolSchema, "kind">;
+type ArrOpts<E extends Schema> = Omit<ArrSchema<E>, "kind" | "element">;
+type EnumOpts<V extends string> = Omit<EnumSchema<V>, "kind" | "values">;
+
 // --- constructors ---
 //
-// Each `s.*` factory preserves the literal type of its options so that
-// `optional: true` flows into the inferred shape. Returning `Opts & {kind}`
-// (instead of widening to the interface) is the key — without it, TS widens
-// `optional: true` to `boolean` and the `IsOptional<>` check collapses.
+// Each `s.*` factory returns `O & { kind: ... }` so the literal `optional: true`
+// on the caller's opts flows into the inferred shape — `Field<>` below reads
+// that literal to add `| undefined` to optional fields.
+//
+// We deliberately do NOT provide a `= {}` default on `opts`. Doing so requires
+// `opts: O = {} as O` (a cast), and every call site already passes an object
+// (often `{}`) so the friction is zero.
 
 export const s = {
-  str<O extends Omit<StrSchema, "kind">>(opts: O = {} as O): O & { kind: "string" } {
+  str<O extends StrOpts>(opts: O): O & { kind: "string" } {
     return { kind: "string", ...opts };
   },
-  num<O extends Omit<NumSchema, "kind">>(opts: O = {} as O): O & { kind: "number" } {
+  num<O extends NumOpts>(opts: O): O & { kind: "number" } {
     return { kind: "number", ...opts };
   },
   /** Shorthand for `num({ int: true, ...opts })`. */
-  int<O extends Omit<NumSchema, "kind" | "int">>(
-    opts: O = {} as O,
-  ): O & { kind: "number"; int: true } {
+  int<O extends Omit<NumOpts, "int">>(opts: O): O & { kind: "number"; int: true } {
     return { kind: "number", int: true, ...opts };
   },
-  bool<O extends Omit<BoolSchema, "kind">>(opts: O = {} as O): O & { kind: "boolean" } {
+  bool<O extends BoolOpts>(opts: O): O & { kind: "boolean" } {
     return { kind: "boolean", ...opts };
   },
-  arr<E extends Schema, O extends Omit<ArrSchema<E>, "kind" | "element">>(
+  arr<E extends Schema, O extends ArrOpts<E>>(
     element: E,
-    opts: O = {} as O,
+    opts: O,
   ): O & { kind: "array"; element: E } {
     return { kind: "array", element, ...opts };
   },
   /** Enum (named `pick` since `enum` is a TS reserved word). Preserves the
    * literal string-union type via `values`. */
-  pick<V extends string, O extends Omit<EnumSchema<V>, "kind" | "values">>(
+  pick<V extends string, O extends EnumOpts<V>>(
     values: readonly V[],
-    opts: O = {} as O,
+    opts: O,
   ): O & { kind: "enum"; values: readonly V[] } {
     return { kind: "enum", values, ...opts };
   },
@@ -149,7 +161,7 @@ export function validate(schema: Schema, raw: unknown, path = ""): ValidateResul
     case "number":
       return validateNum(schema, raw, path);
     case "boolean":
-      return validateBool(schema, raw, path);
+      return validateBool(raw, path);
     case "array":
       return validateArr(schema, raw, path);
     case "enum":
@@ -178,7 +190,7 @@ function validateNum(s: NumSchema, raw: unknown, path: string): ValidateResult<n
   return { ok: true, value: raw };
 }
 
-function validateBool(_s: BoolSchema, raw: unknown, path: string): ValidateResult<boolean> {
+function validateBool(raw: unknown, path: string): ValidateResult<boolean> {
   if (typeof raw !== "boolean") return fail(path, `expected boolean, got ${typeName(raw)}`);
   return { ok: true, value: raw };
 }
@@ -228,6 +240,10 @@ export function validateShape<Shape extends Record<string, Schema>>(
       errors.push(...r.errors);
     }
   }
+  // The one unavoidable type assertion in this module: TypeScript can't follow
+  // the per-field validator loop to prove `value` matches the inferred shape,
+  // but every value pushed in came from a `validate()` call that returned `ok`
+  // for its kind. Safe by construction.
   return errors.length ? { ok: false, errors } : { ok: true, value: value as Infer<Shape> };
 }
 

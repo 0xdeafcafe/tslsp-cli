@@ -1,4 +1,4 @@
-import type { ArrSchema, EnumSchema, NumSchema, Schema } from "./schema.js";
+import type { Schema } from "./schema.js";
 import type { ToolDef } from "./tools.js";
 
 export function isBoolean(s: Schema): boolean {
@@ -10,11 +10,13 @@ export function isArray(s: Schema): boolean {
 }
 
 export function arrayInner(s: Schema): Schema {
-  return s.kind === "array" ? (s as ArrSchema).element : s;
+  // `s.kind === "array"` narrows `s` to ArrSchema via the discriminated
+  // union — no cast needed to reach `.element`.
+  return s.kind === "array" ? s.element : s;
 }
 
 export function enumValues(s: Schema): string[] {
-  return s.kind === "enum" ? [...(s as EnumSchema).values] : [];
+  return s.kind === "enum" ? [...s.values] : [];
 }
 
 /** Coerce a string token from argv into the schema's runtime type. Throws
@@ -25,22 +27,18 @@ export function coerce(s: Schema, raw: string): unknown {
     case "number": {
       const n = Number(raw);
       if (!Number.isFinite(n)) throw new Error(`expected number, got "${raw}"`);
-      if ((s as NumSchema).int && !Number.isInteger(n)) {
-        throw new Error(`expected integer, got "${raw}"`);
-      }
+      if (s.int && !Number.isInteger(n)) throw new Error(`expected integer, got "${raw}"`);
       return n;
     }
     case "boolean":
       // Only the `--flag=VAL` form lands here. Bare `--flag` is set to true
       // by parseArgs without round-tripping through coerce.
       return raw === "true" || raw === "1";
-    case "enum": {
-      const values = (s as EnumSchema).values;
-      if (!values.includes(raw)) {
-        throw new Error(`expected one of ${values.join("|")}, got "${raw}"`);
+    case "enum":
+      if (!s.values.includes(raw)) {
+        throw new Error(`expected one of ${s.values.join("|")}, got "${raw}"`);
       }
       return raw;
-    }
     default:
       return raw;
   }
@@ -53,7 +51,7 @@ export function typeHint(s: Schema): string {
     case "number":
       return "number";
     case "enum":
-      return (s as EnumSchema).values.join("|");
+      return s.values.join("|");
     default:
       return "value";
   }
@@ -72,13 +70,17 @@ export function parseArgs(tool: ToolDef, argv: string[]): Record<string, unknown
   let posIdx = 0;
 
   for (let i = 0; i < argv.length; i++) {
-    const tok = argv[i]!;
+    const tok = argv[i];
+    // Loop bound guarantees `tok` is defined; the explicit check satisfies
+    // `noUncheckedIndexedAccess` without a `!` assertion. Same pattern below
+    // for the `--flag VALUE` lookahead.
+    if (tok === undefined) continue;
     if (tok.startsWith("--")) {
       const eq = tok.indexOf("=");
       const flag = (eq === -1 ? tok.slice(2) : tok.slice(2, eq)).replace(/-/g, "_");
       const inline = eq === -1 ? undefined : tok.slice(eq + 1);
-      if (!(flag in shape)) throw new Error(`unknown flag: --${flag.replace(/_/g, "-")}`);
-      const ty = shape[flag]!;
+      const ty = shape[flag];
+      if (!ty) throw new Error(`unknown flag: --${flag.replace(/_/g, "-")}`);
       if (isBoolean(ty)) {
         if (inline === undefined) out[flag] = true;
         else out[flag] = inline === "true" || inline === "1";
