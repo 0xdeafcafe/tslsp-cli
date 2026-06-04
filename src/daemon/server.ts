@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { createServer, Server, Socket } from "node:net";
-import { z } from "zod";
+import { formatValidationErrors, type Schema, validateShape } from "../schema.js";
 import { getTool, ToolResult } from "../tools.js";
 import { envIdleMs, LspPool } from "../workspace.js";
 import { deleteSession, ensureProfilesDir, socketPathFor, writeSession } from "./registry.js";
@@ -202,25 +202,13 @@ async function dispatchRun(
   if (!tool) {
     return { text: `unknown cmd: ${params.cmd}`, isError: true, exitCode: 1 };
   }
-  let validated: Record<string, unknown>;
-  try {
-    const schema = z.object(tool.inputSchema as z.ZodRawShape);
-    validated = schema.parse(params.args) as Record<string, unknown>;
-  } catch (e) {
-    const msg = e instanceof z.ZodError ? formatZodError(e) : String((e as Error).message ?? e);
-    return { text: msg, isError: true, exitCode: 2 };
+  const args = (params.args ?? {}) as Record<string, unknown>;
+  const v = validateShape(tool.inputSchema as Record<string, Schema>, args);
+  if (!v.ok) {
+    return { text: formatValidationErrors(v.errors), isError: true, exitCode: 2 };
   }
-  const result = await tool.handler(validated as never, { pool, cwd: params.cwd });
+  const result = await tool.handler(v.value as never, { pool, cwd: params.cwd });
   return { ...result, exitCode: result.isError ? 1 : 0 };
-}
-
-function formatZodError(e: z.ZodError): string {
-  return e.issues
-    .map((iss) => {
-      const path = iss.path.length ? iss.path.join(".") : "<arg>";
-      return `invalid ${String(path)}: ${iss.message}`;
-    })
-    .join("\n");
 }
 
 async function readLine(socket: Socket): Promise<string | undefined> {

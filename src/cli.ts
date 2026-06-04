@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { z } from "zod";
 import { fieldDesc, isBoolean, parseArgs, typeHint } from "./cli-args.js";
 import { DaemonVersionMismatch, ensureDaemon, sendRequest } from "./daemon/client.js";
 import {
@@ -10,6 +9,7 @@ import {
   stopDaemon,
 } from "./daemon/control.js";
 import { serve as serveDaemon } from "./daemon/server.js";
+import { formatValidationErrors, type Schema, validateShape } from "./schema.js";
 import { installSkills } from "./skill-install.js";
 import { TOOLS, getTool, ToolDef } from "./tools.js";
 import { findProjectRoot, LspPool } from "./workspace.js";
@@ -233,17 +233,14 @@ async function runTool(tool: ToolDef, argv: string[], opts: RunToolOpts = {}): P
     return emitError(opts.useJson, (e as Error).message, 2, toolHelp(tool));
   }
 
-  // Validate against the tool's zod schema so CLI flag parsing inherits
-  // the same constraint checks the handlers expect (e.g. `.min(1)`,
-  // `.positive()`, `.max(200)`).
-  let validated: Record<string, unknown>;
-  try {
-    const schema = z.object(tool.inputSchema as z.ZodRawShape);
-    validated = schema.parse(parsed) as Record<string, unknown>;
-  } catch (e) {
-    const msg = e instanceof z.ZodError ? formatZodError(e) : (e as Error).message;
-    return emitError(opts.useJson, msg, 2, toolHelp(tool));
+  // Validate against the tool's schema so CLI flag parsing inherits the same
+  // constraint checks the handlers expect (e.g. `min: 1`, `positive: true`,
+  // `max: 200`).
+  const v = validateShape(tool.inputSchema as Record<string, Schema>, parsed);
+  if (!v.ok) {
+    return emitError(opts.useJson, formatValidationErrors(v.errors), 2, toolHelp(tool));
   }
+  const validated = v.value as Record<string, unknown>;
 
   if (opts.useDaemon) {
     return runToolViaDaemon(tool, validated, opts);
@@ -438,15 +435,6 @@ function daemonHelp(): string {
   ].join("\n");
 }
 
-function formatZodError(e: z.ZodError): string {
-  return e.issues
-    .map((iss) => {
-      const path = iss.path.length ? iss.path.join(".") : "<arg>";
-      return `invalid --${String(path).replace(/_/g, "-")}: ${iss.message}`;
-    })
-    .join("\n");
-}
-
 // --- help ---
 
 export function rootHelp(): string {
@@ -488,7 +476,7 @@ export function rootHelp(): string {
 }
 
 export function toolHelp(tool: ToolDef): string {
-  const shape = tool.inputSchema as Record<string, z.ZodTypeAny>;
+  const shape = tool.inputSchema as Record<string, Schema>;
   const positional = (tool.positional ?? []) as string[];
   const flags = Object.keys(shape).filter((k) => !positional.includes(k));
   const lines: string[] = [];
