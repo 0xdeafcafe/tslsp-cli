@@ -1,7 +1,7 @@
 ---
 name: tslsp
 description: REQUIRED for any TypeScript/JavaScript symbol work in a project with tsconfig.json. Use INSTEAD OF Grep/Edit/MultiEdit/mv/git mv/tsc when the target is an identifier in .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs. Type-aware via tsgo. Triggers — finding usages, jumping to a definition, renaming a symbol, moving or renaming a file (with import rewrites), reading type signatures or JSDoc, outlining a file, checking type errors, organizing imports, finding implementations of an interface, tracing callers or callees, applying a quick-fix.
-allowed-tools: Bash(tslsp-cli:*), Bash(npx:*)
+allowed-tools: Bash(npx:*)
 ---
 
 # tslsp-cli — your only TypeScript navigation/refactor tool
@@ -9,6 +9,18 @@ allowed-tools: Bash(tslsp-cli:*), Bash(npx:*)
 If there's a `tsconfig.json` in the tree and the thing you're touching is an identifier in TS/JS, you use `tslsp-cli`. Not `Grep`, not `Edit`, not `mv`. tsgo (Microsoft's native TypeScript LSP) actually understands the program; text tools see characters.
 
 This is not "a faster grep." It's the difference between a refactor that compiles and a refactor that bricks production.
+
+## How to invoke
+
+Run every command through `npx --no-install`:
+
+```bash
+npx --no-install @0xdeafcafe/tslsp-cli <command> [args...]
+```
+
+`--no-install` is deliberate — it uses the project-local or globally-installed `@0xdeafcafe/tslsp-cli` and fails loudly if neither is present, instead of silently fetching a random version mid-refactor. If it errors with "not installed," tell the user to run `npm i -g @0xdeafcafe/tslsp-cli` (or add it as a devDependency) and stop.
+
+In the examples below, `tslsp-cli` is shorthand for `npx --no-install @0xdeafcafe/tslsp-cli`. Type it out in full when you actually invoke it.
 
 ## The rule
 
@@ -45,7 +57,7 @@ tslsp-cli find-symbol stamp --container Util          # only Util.stamp, not oth
 
 # Where does this come from / where is it used / who implements it?
 tslsp-cli definition     --symbol User
-tslsp-cli references     --symbol User                # auto-summarizes over 50 refs; --summary=false to keep snippets
+tslsp-cli references     --symbol User
 tslsp-cli references     --symbol User --summary      # path (N): lines — huge token cut on popular symbols
 tslsp-cli implementation --symbol IGreeter
 tslsp-cli type-definition --symbol someValue
@@ -58,17 +70,16 @@ tslsp-cli rename --symbol User --new-name Account
 tslsp-cli rename-file src/old/User.ts src/users/User.ts --dry-run
 tslsp-cli rename-file src/old/User.ts src/users/User.ts
 
-# Outline — read structure, not bytes. Output: `<line>: <kind> <name>`, nested by indent.
+# Outline — read structure, not bytes. Accepts globs and directories.
 tslsp-cli outline src/api.ts
 tslsp-cli outline 'src/**/*.ts'                        # quote the glob
 tslsp-cli outline src/api/                             # directory walk
 tslsp-cli outline --depth 0 src/big-file.ts            # top-level only
 tslsp-cli outline --kind class,function src/big.ts     # skip the noise
 
-# Type signature / JSDoc. Capped at 800 chars by default.
+# Type signature / JSDoc.
 tslsp-cli hover --symbol User
 tslsp-cli hover --symbols User,Account,Session         # batch
-tslsp-cli hover --symbol User --full                   # skip the cap
 
 # Did my edit type-check?
 tslsp-cli diagnostics --file src/api.ts
@@ -147,24 +158,14 @@ Use `Grep` / `Edit` / `Read` / `mv` only for:
 
 If the thing you're acting on is an identifier in TS/JS under a `tsconfig.json`, **`tslsp-cli`**. No exceptions for "small changes" or "I already know where it is" — those are the cases this exists for.
 
-## Installation fallback
-
-If `tslsp-cli` isn't on PATH:
-
-```bash
-npx --no-install @0xdeafcafe/tslsp-cli <command> [...]
-```
-
-Don't repeat the binary name after the package — `npx @0xdeafcafe/tslsp-cli` already resolves to the `tslsp-cli` bin, so `npx … @0xdeafcafe/tslsp-cli tslsp-cli find-symbol …` will exit with `unknown command: tslsp-cli`.
-
 ## Make Claude reach for this without thinking
 
 ```bash
 # Project: skill + a CLAUDE.md nudge so Claude routes here every session.
-tslsp-cli install --skills --project --with-claude-md
+npx --no-install @0xdeafcafe/tslsp-cli install --skills --project --with-claude-md
 
 # User: same, but available to every project on the machine.
-tslsp-cli install --skills --with-claude-md
+npx --no-install @0xdeafcafe/tslsp-cli install --skills --with-claude-md
 ```
 
 `--with-claude-md` appends a short routing block to `CLAUDE.md` (idempotent — guarded by a marker comment). Project scope writes to `./CLAUDE.md`; user scope writes to `~/.claude/CLAUDE.md`.

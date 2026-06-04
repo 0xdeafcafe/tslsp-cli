@@ -1,0 +1,14 @@
+{
+  "name": "tslsp",
+  "version": "0.3.0",
+  "description": "Type-aware TypeScript/JavaScript code intelligence skill for Claude Code. Routes symbol-level work (find usages, jump-to-def, rename, move file with import rewrites, hover, diagnostics, call hierarchy) through tsgo (Microsoft's native TypeScript LSP) instead of Grep/Edit/mv.",
+  "author": {
+    "name": "Alexander Forbes-Reed",
+    "email": "me@alex.forbes.red",
+    "url": "https://github.com/0xdeafcafe"
+  },
+  "homepage": "https://github.com/0xdeafcafe/tslsp-mcp",
+  "repository": "https://github.com/0xdeafcafe/tslsp-mcp",
+  "license": "MIT",
+  "keywords": ["typescript", "javascript", "lsp", "tsgo", "refactor", "rename", "code-intelligence"]
+}
