@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.3.0...v0.4.0) (2026-06-04)
+
+
+### Features
+
+* distribute as a Claude Code plugin marketplace ([#21](https://github.com/0xdeafcafe/tslsp-cli/issues/21)) ([e9d4ed0](https://github.com/0xdeafcafe/tslsp-cli/commit/e9d4ed05f35c4929a6353a51a9f9bd08f2ab89f3))
+* recovery hints for unknown commands + token-efficient outline/hover/refs ([#18](https://github.com/0xdeafcafe/tslsp-cli/issues/18)) ([761abd3](https://github.com/0xdeafcafe/tslsp-cli/commit/761abd3fd424bcfbae94b0432c05e8862357f747))
+
 ## [0.3.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.2.0...v0.3.0) (2026-05-29)
 
 
