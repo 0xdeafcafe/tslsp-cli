@@ -45,7 +45,7 @@ tslsp-cli find-symbol stamp --container Util          # only Util.stamp, not oth
 
 # Where does this come from / where is it used / who implements it?
 tslsp-cli definition     --symbol User
-tslsp-cli references     --symbol User
+tslsp-cli references     --symbol User                # auto-summarizes over 50 refs; --summary=false to keep snippets
 tslsp-cli references     --symbol User --summary      # path (N): lines — huge token cut on popular symbols
 tslsp-cli implementation --symbol IGreeter
 tslsp-cli type-definition --symbol someValue
@@ -58,16 +58,17 @@ tslsp-cli rename --symbol User --new-name Account
 tslsp-cli rename-file src/old/User.ts src/users/User.ts --dry-run
 tslsp-cli rename-file src/old/User.ts src/users/User.ts
 
-# Outline — read structure, not bytes. Accepts globs and directories.
+# Outline — read structure, not bytes. Output: `<line>: <kind> <name>`, nested by indent.
 tslsp-cli outline src/api.ts
 tslsp-cli outline 'src/**/*.ts'                        # quote the glob
 tslsp-cli outline src/api/                             # directory walk
 tslsp-cli outline --depth 0 src/big-file.ts            # top-level only
 tslsp-cli outline --kind class,function src/big.ts     # skip the noise
 
-# Type signature / JSDoc.
+# Type signature / JSDoc. Capped at 800 chars by default.
 tslsp-cli hover --symbol User
 tslsp-cli hover --symbols User,Account,Session         # batch
+tslsp-cli hover --symbol User --full                   # skip the cap
 
 # Did my edit type-check?
 tslsp-cli diagnostics --file src/api.ts
@@ -151,8 +152,10 @@ If the thing you're acting on is an identifier in TS/JS under a `tsconfig.json`,
 If `tslsp-cli` isn't on PATH:
 
 ```bash
-npx --no-install @0xdeafcafe/tslsp-cli tslsp-cli <command> [...]
+npx --no-install @0xdeafcafe/tslsp-cli <command> [...]
 ```
+
+Don't repeat the binary name after the package — `npx @0xdeafcafe/tslsp-cli` already resolves to the `tslsp-cli` bin, so `npx … @0xdeafcafe/tslsp-cli tslsp-cli find-symbol …` will exit with `unknown command: tslsp-cli`.
 
 ## Make Claude reach for this without thinking
 

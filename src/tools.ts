@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import {
   allKindNames,
+  capHover,
   formatCallHierarchyIncoming,
   formatCallHierarchyOutgoing,
   formatCodeActions,
@@ -12,6 +13,7 @@ import {
   formatOutline,
   kindFromName,
   kindName,
+  OUTLINE_PREAMBLE,
   uriToRel,
 } from "./format.js";
 import {
@@ -337,6 +339,18 @@ interface ReferencesOpts {
   summary?: boolean;
 }
 
+/** Above this many refs, an unset `summary` auto-flips to grouped output —
+ * 200 snippets for a popular symbol blows the token budget for no gain. The
+ * caller can still force snippets with `--summary=false`. */
+export const REFERENCES_AUTO_SUMMARY_THRESHOLD = 50;
+
+/** Pure decision helper for the auto-summary flip. Auto kicks in only when
+ * the caller didn't pass `summary` either way — an explicit `--summary=false`
+ * keeps snippets even on huge ref sets, an explicit `--summary` always groups. */
+export function shouldAutoSummarize(summary: boolean | undefined, refCount: number): boolean {
+  return summary === undefined && refCount > REFERENCES_AUTO_SUMMARY_THRESHOLD;
+}
+
 async function referencesOne(
   loc: SymbolLocator,
   ctx: ToolContext,
@@ -350,12 +364,15 @@ async function referencesOne(
         context: { includeDeclaration: opts.include_declaration ?? true },
       })) ?? [];
     if (!refs.length) return okEmpty("no references");
-    if (opts.summary) {
+    const auto = shouldAutoSummarize(opts.summary, refs.length);
+    const useSummary = opts.summary === true || auto;
+    if (useSummary) {
       // Same default as the non-summary path. Caps FILES, not refs — per-file
       // counts stay accurate even when the file list is truncated.
       const cap = opts.limit ?? 200;
       const { text, files, omitted } = formatLocationsByFile(refs, root, cap);
-      const head = `${refs.length} ref${refs.length === 1 ? "" : "s"} across ${files} file${files === 1 ? "" : "s"}`;
+      const autoTag = auto ? " (auto-summarized; pass --summary=false for snippets)" : "";
+      const head = `${refs.length} ref${refs.length === 1 ? "" : "s"} across ${files} file${files === 1 ? "" : "s"}${autoTag}`;
       const trailer = omitted > 0 ? `\n+${omitted} more files (raise --limit)` : "";
       return ok(`${head}\n${text}${trailer}`);
     }
@@ -376,7 +393,9 @@ const references = defineTool({
     summary: z
       .boolean()
       .optional()
-      .describe("Group refs by file (`path (N): lines`); drops snippets."),
+      .describe(
+        `Group refs by file (\`path (N): lines\`); drops snippets. Auto-flips on when refs > ${REFERENCES_AUTO_SUMMARY_THRESHOLD}; pass \`--summary=false\` to keep snippets.`,
+      ),
   },
   handler: async ({ symbols, include_declaration, limit, summary, ...loc }, ctx) => {
     const opts: ReferencesOpts = { include_declaration, limit, summary };
@@ -540,13 +559,17 @@ const renameFile = defineTool({
   },
 });
 
-async function hoverOne(loc: SymbolLocator, ctx: ToolContext): Promise<ToolResult> {
+async function hoverOne(
+  loc: SymbolLocator,
+  ctx: ToolContext,
+  opts: { full?: boolean },
+): Promise<ToolResult> {
   return withLocator(ctx, loc, async ({ client, uri, position }) => {
     const h = await client.request<Hover | null>("textDocument/hover", {
       textDocument: { uri },
       position,
     });
-    const text = formatHover(h);
+    const text = capHover(formatHover(h), opts.full);
     return h ? ok(text) : okEmpty(text);
   });
 }
@@ -554,16 +577,23 @@ async function hoverOne(loc: SymbolLocator, ctx: ToolContext): Promise<ToolResul
 const hover = defineTool({
   name: "hover",
   description: "Type signature + JSDoc for a symbol. Single locator, or batch via `symbols`.",
-  inputSchema: { ...locatorShape, ...symbolsField },
-  handler: async ({ symbols, ...loc }, ctx) => {
+  inputSchema: {
+    ...locatorShape,
+    ...symbolsField,
+    full: z
+      .boolean()
+      .optional()
+      .describe("Skip the 800-char hover cap — return the entire JSDoc/type blob."),
+  },
+  handler: async ({ symbols, full, ...loc }, ctx) => {
     if (symbols && symbols.length) {
       return fanout(
         symbols,
         (s) => s,
-        (s) => hoverOne({ symbol: s }, ctx),
+        (s) => hoverOne({ symbol: s }, ctx, { full }),
       );
     }
-    return hoverOne(loc as SymbolLocator, ctx);
+    return hoverOne(loc as SymbolLocator, ctx, { full });
   },
 });
 
@@ -595,7 +625,7 @@ async function outlineOne(file: string, opts: OutlineOpts, ctx: ToolContext): Pr
     if (!flat.length) return okEmpty("(empty)");
     return ok(
       flat
-        .map((s) => `${kindName(s.kind)} ${s.name}  (line ${s.location.range.start.line + 1})`)
+        .map((s) => `${s.location.range.start.line + 1}: ${kindName(s.kind)} ${s.name}`)
         .join("\n"),
     );
   } catch (e) {
@@ -647,14 +677,25 @@ const outline = defineTool({
     const opts: OutlineOpts = { maxDepth: depth, kinds };
     const list = await expandFileArgs(inputs, ctx.cwd);
     if (!list.length) return okEmpty("no matching files");
-    if (list.length === 1) return outlineOne(list[0]!, opts, ctx);
-    return fanout(
-      list,
-      (f) => f,
-      (f) => outlineOne(f, opts, ctx),
-    );
+    const result =
+      list.length === 1
+        ? await outlineOne(list[0]!, opts, ctx)
+        : await fanout(
+            list,
+            (f) => f,
+            (f) => outlineOne(f, opts, ctx),
+          );
+    return withOutlinePreamble(result);
   },
 });
+
+/** Prepend the format-key preamble once at the top of the outline output —
+ * not per-file in batched runs. Skips empty/error results so the preamble
+ * never appears alone above a one-liner like `(empty)` or `no matching files`. */
+function withOutlinePreamble(r: ToolResult): ToolResult {
+  if (r.empty || r.isError || !r.text) return r;
+  return { ...r, text: `${OUTLINE_PREAMBLE}\n${r.text}` };
+}
 
 /** Prepend a one-line summary (`3 errors, 1 warn across 2 files`) to a
  * batched diagnostics result so Claude can scan severity before reading

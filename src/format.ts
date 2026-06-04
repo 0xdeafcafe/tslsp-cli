@@ -173,7 +173,11 @@ export function formatOutline(symbols: DocumentSymbol[], opts: FormatOutlineOpts
         const indent = "  ".repeat(depth);
         const sig = n.detail ? ` ${n.detail}` : "";
         const line = n.range.start.line + 1;
-        out.push(`${indent}${kindName(n.kind)} ${n.name}${sig}  (line ${line})`);
+        // Compact line-prefix form: "5: class Foo  detail". The trailing
+        // "(line N)" suffix saves ~6 chars per row vs the prefix, which adds
+        // up on a 100-symbol file. Format note is emitted once by the outline
+        // handler so the agent doesn't have to infer it.
+        out.push(`${indent}${line}: ${kindName(n.kind)} ${n.name}${sig}`);
       }
       if (n.children?.length && (max === undefined || depth < max)) {
         walk(n.children, depth + (keep ? 1 : 0));
@@ -182,6 +186,24 @@ export function formatOutline(symbols: DocumentSymbol[], opts: FormatOutlineOpts
   };
   walk(symbols, 0);
   return out.length ? out.join("\n") : "(empty)";
+}
+
+/** One-line preamble prepended to outline output so the leading `N:` is
+ * unambiguous on first read. Kept short — the savings from the format change
+ * dwarf this fixed cost on any non-trivial file. */
+export const OUTLINE_PREAMBLE = "# format: <line>: <kind> <name>  (line is 1-based)";
+
+/** Cap a hover blob at `max` characters. tsgo hover for framework symbols can
+ * dump 1-2KB of JSDoc + examples; agents almost always want the signature, not
+ * the full doc. The slice closes any open code fence so the trailing markdown
+ * doesn't render as a half-open block. */
+export function capHover(text: string, full = false, max = 800): string {
+  if (full || text.length <= max) return text;
+  const slice = text.slice(0, max - 1);
+  const fenceCount = (slice.match(/```/g) ?? []).length;
+  const closer = fenceCount % 2 === 1 ? "\n```" : "";
+  const omitted = text.length - (max - 1);
+  return `${slice}${closer}\n…+${omitted} chars truncated (pass --full to disable)`;
 }
 
 const SEVERITY: Record<number, string> = { 1: "error", 2: "warn", 3: "info", 4: "hint" };

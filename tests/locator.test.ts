@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { locateIdentifierInRange } from "../src/locator.js";
+import { buildSymbolNotOnLineError, locateIdentifierInRange } from "../src/locator.js";
 
 let dir: string;
 let file: string;
@@ -63,5 +63,46 @@ describe("locateIdentifierInRange", () => {
       "double",
     );
     expect(pos.line).toBe(1); // matched the comment, not 'doublewide'
+  });
+});
+
+describe("buildSymbolNotOnLineError", () => {
+  const lines = [
+    "// header",
+    "",
+    "function thing() {",
+    "  return runWithContext(() => 1);",
+    "}",
+    "",
+    "// runWithContext is also referenced in the comment",
+    "const fn = runWithContext;",
+  ];
+
+  it("includes 'zero-based' so off-by-one is obvious", () => {
+    const msg = buildSymbolNotOnLineError("runWithContext", 0, lines, "/repo/x.ts", "/repo");
+    expect(msg).toMatch(/zero-based; first line is 0/);
+    expect(msg).toMatch(/symbol "runWithContext" not found on line 0 of x\.ts/);
+  });
+
+  it("lists nearby lines closest-first and proposes the nearest when within ±3", () => {
+    // User asked for line 2; symbol is on lines 3, 6, 7. Nearest is 3 (Δ=1).
+    const msg = buildSymbolNotOnLineError("runWithContext", 2, lines, "/repo/x.ts", "/repo");
+    expect(msg).toMatch(/found "runWithContext" on lines: 3, 6, 7/);
+    expect(msg).toMatch(/did you mean --line 3\?/);
+  });
+
+  it("omits the --line guess when no hit is within ±3", () => {
+    // Asked for line 0; nearest hit is line 3 (Δ=3) — still inside the window,
+    // so we DO suggest. Move the asked-for line to 20 to push it outside.
+    const padded = [...lines, ...Array(30).fill("")];
+    const msg = buildSymbolNotOnLineError("runWithContext", 20, padded, "/repo/x.ts", "/repo");
+    expect(msg).toMatch(/found "runWithContext" on lines:/);
+    expect(msg).not.toMatch(/did you mean --line/);
+  });
+
+  it("says so when the symbol doesn't appear in the file at all", () => {
+    const msg = buildSymbolNotOnLineError("nowhereSymbol", 2, lines, "/repo/x.ts", "/repo");
+    expect(msg).toMatch(/does not appear anywhere in this file/);
+    expect(msg).toMatch(/Drop --line and pass --symbol alone/);
   });
 });
