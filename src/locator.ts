@@ -186,7 +186,8 @@ export function buildSymbolNotOnLineError(
   // Closest hits first.
   const near = [...hits].sort((a, b) => Math.abs(a - line) - Math.abs(b - line)).slice(0, 5);
   const nearestDelta = Math.abs(near[0]! - line);
-  const shownSuffix = hits.length > near.length ? ` (showing closest ${near.length} of ${hits.length})` : "";
+  const shownSuffix =
+    hits.length > near.length ? ` (showing closest ${near.length} of ${hits.length})` : "";
   const list = `found "${symbol}" on line${hits.length === 1 ? "" : "s"}: ${near.join(", ")}${shownSuffix}`;
   // Only push a "did you mean --line N?" when the nearest is within ±3 — far
   // hits are probably unrelated uses, not the declaration the user was after.
