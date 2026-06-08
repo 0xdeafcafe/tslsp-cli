@@ -79,11 +79,13 @@ interface ChatResponse {
 }
 
 class GatewayError extends Error {
-  constructor(
-    message: string,
-    readonly status: number | null,
-  ) {
+  // Plain field instead of a constructor parameter property: Node's
+  // --experimental-strip-types is strip-only and doesn't desugar that
+  // form.
+  readonly status: number | null;
+  constructor(message: string, status: number | null) {
     super(message);
+    this.status = status;
   }
 }
 
