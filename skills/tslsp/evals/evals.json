@@ -1,33 +1,79 @@
 {
   "skill_name": "tslsp",
+  "description": "Regression evals for the tslsp skill. Each prompt is fed to a model with skills/tslsp/SKILL.md as the system prompt; the response is scored by one or more scorers (regex match against the agent's chosen commands, or LLM-as-judge for nuanced criteria). Run via `pnpm run evals`. CI triggers on `@evals` PR comment.",
   "evals": [
     {
       "id": 0,
       "eval_name": "tidy-after-edit-batch",
-      "prompt": "I just hand-edited the imports in `src/messy.ts` to add a couple of dependencies. Can you clean up the import order (and drop anything unused) so it's tidy?",
-      "expected_output": "Agent runs `tslsp-cli tidy organise-imports src/messy.ts` (or equivalent invocation). File ends up with imports sorted external-then-relative, `./math` imports merged, and `_unused = readFileSync` retained because `readFileSync` is referenced.",
-      "files": ["scratch/src/messy.ts"]
+      "prompt": "I just hand-edited the imports in `src/messy.ts` to add a couple of dependencies. The current contents:\n\n```ts\nimport { double } from \"./math\";\nimport { readFileSync } from \"node:fs\";\nimport { add } from \"./math\";\n\nconst _unused = readFileSync;\n\nexport function compute(x: number): number {\n  return double(add(x, 1));\n}\n```\n\nCan you clean up the import order (and drop anything unused) so it's tidy?",
+      "scorers": [
+        {
+          "type": "regex",
+          "name": "uses_tidy_organise_imports",
+          "pattern": "tidy\\s+organise-imports"
+        },
+        {
+          "type": "llm_judge",
+          "name": "preserves_unused_alias",
+          "criterion": "Does the response either preserve `const _unused = readFileSync;` and its `node:fs` import, OR explicitly call out that those entries are dead code and asks the user before removing them? A response that silently deletes the `_unused` alias and the `readFileSync` import without flagging it fails this criterion (because that's a behaviour change beyond import tidy)."
+        }
+      ]
     },
     {
       "id": 1,
       "eval_name": "rename-common-name",
-      "prompt": "Rename the `add` function to `sum` across this project.",
-      "expected_output": "Agent runs `tslsp-cli rename --symbol add --new-name sum --dry-run` first (per skill guidance for common names), then applies. Both `src/math.ts` (declaration) and `src/index.ts` (call site) are updated. No regex/grep approach.",
-      "files": ["scratch/src/index.ts", "scratch/src/math.ts"]
+      "prompt": "Rename the `add` function to `sum` across this TypeScript project.",
+      "scorers": [
+        {
+          "type": "regex",
+          "name": "uses_tslsp_rename",
+          "pattern": "tslsp-cli\\s+rename.*--symbol\\s+add.*--new-name\\s+sum|rename\\s+--symbol\\s+add\\s+--new-name\\s+sum"
+        },
+        {
+          "type": "regex",
+          "name": "dry_run_first",
+          "pattern": "--dry-run"
+        },
+        {
+          "type": "llm_judge",
+          "name": "no_grep_edit_approach",
+          "criterion": "Does the response avoid suggesting a grep + per-file Edit/MultiEdit workflow for the rename? It must route the rename through the type-aware tslsp-cli rename command (or equivalent skill instruction), not through text-based search-and-replace."
+        }
+      ]
     },
     {
       "id": 2,
       "eval_name": "find-and-trace-symbol",
       "prompt": "Where is `double` defined, and what calls it? I want to understand it before I touch it.",
-      "expected_output": "Agent runs `tslsp-cli definition --symbol double` and `tslsp-cli references --symbol double` (or `call-hierarchy --direction incoming`). Reports the declaration at `src/math.ts` and the call sites in `src/index.ts` (and inside `double` itself which calls `add`).",
-      "files": ["scratch/src/index.ts", "scratch/src/math.ts"]
+      "scorers": [
+        {
+          "type": "regex",
+          "name": "uses_definition_or_references",
+          "pattern": "tslsp-cli\\s+(definition|references)"
+        },
+        {
+          "type": "llm_judge",
+          "name": "did_not_over_query",
+          "criterion": "Did the response use AT MOST two tslsp-cli commands (typically `definition` + `references`, or `references` alone)? A response that chains `definition` + `references` + `call-hierarchy` + `hover` to answer this simple two-part question fails (over-use; `references` alone covers call sites)."
+        }
+      ]
     },
     {
       "id": 3,
       "eval_name": "anti-trigger-non-identifier-edit",
       "prompt": "In `src/index.ts`, change the `console.log(doubled)` line to log a labelled string instead: `console.log('result:', doubled)`.",
-      "expected_output": "Agent uses Edit/Write to change the one line. Does NOT reach for tslsp-cli for this task (target is a function-call argument, not an identifier rename or navigation). Light tslsp use is acceptable (e.g. diagnostics after) but the core change should be a direct edit.",
-      "files": ["scratch/src/index.ts"]
+      "scorers": [
+        {
+          "type": "llm_judge",
+          "name": "did_not_use_heavy_tslsp",
+          "criterion": "Does the response avoid heavy tslsp-cli commands (rename, references, find-symbol, call-hierarchy) for this edit? The task is a string-literal argument addition, not symbol-aware refactoring. Light use of `tslsp-cli diagnostics` after the edit (as the skill's verification step) is acceptable; reaching for rename/references/find-symbol is NOT."
+        },
+        {
+          "type": "regex",
+          "name": "used_direct_edit",
+          "pattern": "Edit|MultiEdit|console\\.log\\(['\"]result"
+        }
+      ]
     }
   ]
 }

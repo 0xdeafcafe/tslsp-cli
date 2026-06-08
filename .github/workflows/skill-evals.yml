@@ -1,0 +1,87 @@
+name: skill-evals
+
+# Opt-in by PR comment so we don't burn API tokens on PRs that don't touch the
+# skill. Comment `@evals` (anywhere in the body) on a PR to fire this workflow
+# against that PR's HEAD commit.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  evals:
+    if: |
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '@evals')
+    runs-on: ubuntu-latest
+    steps:
+      - name: react to comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=eyes
+
+      - name: resolve PR ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_JSON=$(gh api "/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}")
+          echo "sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24+ runs .ts natively via --experimental-strip-types without
+          # extra deps. CI runner pins the same minimum the local script does.
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: run evals
+        id: run
+        env:
+          LANGWATCH_API_KEY: ${{ secrets.LANGWATCH_API_KEY }}
+          LANGWATCH_PROJECT_ID: ${{ secrets.LANGWATCH_PROJECT_ID }}
+          LANGWATCH_VIRTUAL_AI_KEY: ${{ secrets.LANGWATCH_VIRTUAL_AI_KEY }}
+          GITHUB_SHA: ${{ steps.pr.outputs.sha }}
+          GITHUB_PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -o pipefail
+          pnpm run evals 2>&1 | tee /tmp/evals.log
+
+      - name: comment on PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "## Skill evals · \`${{ steps.pr.outputs.sha }}\`"
+            echo ""
+            if [ "${{ steps.run.outcome }}" = "success" ]; then
+              echo "Run completed. Inspect this commit vs main in [LangWatch](https://app.langwatch.ai)."
+            else
+              echo "Run failed - see workflow logs for details."
+            fi
+            echo ""
+            echo "<details><summary>Output</summary>"
+            echo ""
+            echo '```'
+            tail -120 /tmp/evals.log || echo "(no output captured)"
+            echo '```'
+            echo ""
+            echo "</details>"
+          } | gh pr comment "${{ github.event.issue.number }}" --body-file -

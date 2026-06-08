@@ -1,0 +1,222 @@
+/**
+ * Run the tslsp skill regression evals against one or more models.
+ *
+ * Loads skills/tslsp/SKILL.md as the system prompt and each entry in
+ * skills/tslsp/evals/evals.json as a user prompt, calls the LangWatch
+ * AI Gateway, then scores each response with the eval's scorers (regex
+ * or LLM-as-judge). Logs one experiment to LangWatch per CI run so the
+ * dashboard shows trends across commits.
+ *
+ * Env:
+ *   LANGWATCH_API_KEY           LangWatch project / personal API key. Required for
+ *                               experiment logging via the SDK.
+ *   LANGWATCH_PROJECT_ID        Required when LANGWATCH_API_KEY is a service / PAT key.
+ *   LANGWATCH_VIRTUAL_AI_KEY    Virtual key (vk-lw-...) minted in the LangWatch app
+ *                               under AI Gateway → Virtual Keys. Used for all model calls.
+ *   GITHUB_SHA, GITHUB_PR_NUMBER   Optional metadata to tag the experiment run.
+ *
+ * Run locally:
+ *   pnpm run evals
+ *
+ * Always exits 0 (informational, not a CI gate).
+ * Inspect trends in https://app.langwatch.ai → Experiments.
+ */
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { LangWatch } from "langwatch";
+
+const ROOT = resolve(import.meta.dirname, "..");
+const SKILL_MD_PATH = resolve(ROOT, "skills/tslsp/SKILL.md");
+const EVALS_PATH = resolve(ROOT, "skills/tslsp/evals/evals.json");
+
+const GATEWAY_URL = "https://gateway.langwatch.ai/v1/chat/completions";
+const MODELS = ["anthropic/claude-opus-4-7", "anthropic/claude-sonnet-4-6"];
+const JUDGE_MODEL = "anthropic/claude-haiku-4-5";
+
+interface RegexScorer {
+  type: "regex";
+  name: string;
+  pattern: string;
+}
+interface LlmJudgeScorer {
+  type: "llm_judge";
+  name: string;
+  criterion: string;
+}
+type Scorer = RegexScorer | LlmJudgeScorer;
+
+interface Eval {
+  id: number;
+  eval_name: string;
+  prompt: string;
+  scorers: Scorer[];
+}
+
+interface EvalsFile {
+  skill_name: string;
+  description?: string;
+  evals: Eval[];
+}
+
+const vk = process.env.LANGWATCH_VIRTUAL_AI_KEY;
+if (!vk) {
+  console.error(
+    "LANGWATCH_VIRTUAL_AI_KEY is required. Mint a virtual key in the LangWatch app under AI Gateway → Virtual Keys and export it as LANGWATCH_VIRTUAL_AI_KEY.",
+  );
+  process.exit(2);
+}
+if (!process.env.LANGWATCH_API_KEY) {
+  console.error("LANGWATCH_API_KEY is required for experiment logging.");
+  process.exit(2);
+}
+
+interface ChatResponse {
+  choices: { message: { content: string } }[];
+}
+
+/** One call into the gateway. Token cap kept tight (the agent's job here is to
+ * decide a command, not to write essays). Judge calls are even smaller. */
+async function chat(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens = 1024,
+): Promise<string> {
+  const res = await fetch(GATEWAY_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${vk}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      max_tokens: maxTokens,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`gateway ${res.status} for ${model}: ${await res.text()}`);
+  }
+  const json = (await res.json()) as ChatResponse;
+  return json.choices[0]?.message?.content ?? "";
+}
+
+function scoreRegex(response: string, scorer: RegexScorer): { score: number; details: string } {
+  const matched = new RegExp(scorer.pattern, "i").test(response);
+  return {
+    score: matched ? 1 : 0,
+    details: matched ? `matched /${scorer.pattern}/i` : `no match for /${scorer.pattern}/i`,
+  };
+}
+
+async function scoreLlmJudge(
+  response: string,
+  scorer: LlmJudgeScorer,
+  promptForContext: string,
+): Promise<{ score: number; details: string }> {
+  const judgePrompt = [
+    "You are evaluating an AI agent's response to a user task.",
+    "",
+    `User task: ${promptForContext}`,
+    "",
+    "Agent response:",
+    '"""',
+    response,
+    '"""',
+    "",
+    `Criterion: ${scorer.criterion}`,
+    "",
+    'Reply on a single line: "PASS - <one-sentence reason>" or "FAIL - <one-sentence reason>".',
+  ].join("\n");
+  const verdict = await chat(
+    JUDGE_MODEL,
+    "You are a precise binary evaluator. Output PASS or FAIL with one short reason.",
+    judgePrompt,
+    200,
+  );
+  const trimmed = verdict.trim();
+  const passed = /^pass\b/i.test(trimmed);
+  return { score: passed ? 1 : 0, details: trimmed.slice(0, 240) };
+}
+
+const skillMd = await readFile(SKILL_MD_PATH, "utf8");
+const evalsFile = JSON.parse(await readFile(EVALS_PATH, "utf8")) as EvalsFile;
+
+const sha = (process.env.GITHUB_SHA ?? "").slice(0, 7) || "local";
+const pr = process.env.GITHUB_PR_NUMBER ?? "";
+const runId = pr ? `pr-${pr}-${sha}` : sha;
+const experimentName = `${evalsFile.skill_name}-skill-evals`;
+
+const langwatch = new LangWatch();
+const experiment = await langwatch.experiments.init(experimentName, { runId });
+console.log(`LangWatch experiment: ${experimentName} (run ${runId})`);
+
+interface DatasetRow {
+  index: number;
+  eval: Eval;
+  model: string;
+}
+
+const dataset: DatasetRow[] = evalsFile.evals.flatMap((e, i) =>
+  MODELS.map((model, mi) => ({ index: i * MODELS.length + mi, eval: e, model })),
+);
+
+let passes = 0;
+let fails = 0;
+const lines: string[] = [];
+
+await experiment.run(dataset, async ({ item, index }) => {
+  const { eval: ev, model } = item;
+  const modelShort = model.split("/").pop() ?? model;
+  let response: string;
+  try {
+    response = await chat(model, skillMd, ev.prompt);
+  } catch (e) {
+    const msg = String((e as Error).message ?? e);
+    lines.push(`  ${ev.eval_name} [${modelShort}]  agent call FAILED: ${msg}`);
+    experiment.log("agent_call_error", { index, score: 0, details: msg, target: modelShort });
+    return;
+  }
+
+  for (const scorer of ev.scorers) {
+    let result: { score: number; details: string };
+    try {
+      result =
+        scorer.type === "regex"
+          ? scoreRegex(response, scorer)
+          : await scoreLlmJudge(response, scorer, ev.prompt);
+    } catch (e) {
+      const msg = String((e as Error).message ?? e);
+      lines.push(`  ${ev.eval_name}.${scorer.name} [${modelShort}]  scorer error: ${msg}`);
+      experiment.log(`${ev.eval_name}.${scorer.name}`, {
+        index,
+        score: 0,
+        details: `scorer error: ${msg}`,
+        target: modelShort,
+      });
+      continue;
+    }
+    if (result.score) passes++;
+    else fails++;
+    const flag = result.score ? "PASS" : "FAIL";
+    lines.push(`  ${flag}  ${ev.eval_name}.${scorer.name} [${modelShort}]  ${result.details}`);
+    experiment.log(`${ev.eval_name}.${scorer.name}`, {
+      index,
+      score: result.score,
+      passed: result.score === 1,
+      details: result.details,
+      target: modelShort,
+    });
+  }
+});
+
+console.log("");
+console.log(`Results (${passes + fails} scorers, ${passes} pass / ${fails} fail):`);
+for (const l of lines) console.log(l);
+console.log("");
+console.log(`Dashboard: https://app.langwatch.ai`);
+
+process.exit(0);
