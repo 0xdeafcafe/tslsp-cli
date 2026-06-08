@@ -13,10 +13,19 @@ permissions:
 
 jobs:
   evals:
+    # Trusted commenters only. `issue_comment` checks out the PR's head SHA
+    # and runs that code with LANGWATCH_VIRTUAL_AI_KEY in the environment,
+    # so a drive-by PR could otherwise swap the script and exfiltrate the
+    # gateway key. Maintainers can fire @evals; anyone else's comment is
+    # silently ignored.
     if: |
       github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '@evals')
+      contains(github.event.comment.body, '@evals') &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: react to comment
         env:
@@ -36,13 +45,16 @@ jobs:
           echo "sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
           echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      # Third-party Actions pinned by commit SHA - tag refs can be moved by
+      # the publisher (the actions/checkout v4 tag itself updates whenever a
+      # v4.x.y is cut), and this workflow runs with privileged secrets.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ steps.pr.outputs.sha }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Node 24+ runs .ts natively via --experimental-strip-types without
           # extra deps. CI runner pins the same minimum the local script does.

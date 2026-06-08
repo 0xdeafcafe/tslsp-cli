@@ -50,6 +50,8 @@ Edit `skills/tslsp/evals/evals.json`. Each entry needs:
 
 Rule of thumb: prefer `regex` for "did the agent reach for this specific command", `llm_judge` for "did the agent's reasoning preserve some invariant" (e.g. "didn't over-query", "preserved a referenced binding").
 
+The schema diverges deliberately from `/skill-creator`'s `expectations` (an array of natural-language assertions). `scorers` with a `type` discriminator lets us mix cheap regex with judge-only checks per eval, which matches what we actually want for routing-skill scoring (some checks are mechanical, some need a model).
+
 ## Why this shape
 
 A routing skill (one that lives in another agent's context, like ours) isn't a runnable agent in the LangWatch SDK's usual sense. We wrap it: the "agent" is the gateway call with `SKILL.md` as the system prompt, the "input" is the eval prompt, the "output" is whatever the model produces. Scorers check whether the skill routed correctly.

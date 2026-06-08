@@ -78,18 +78,34 @@ interface ChatResponse {
   choices: { message: { content: string } }[];
 }
 
-/** One call into the gateway. Token cap kept tight (the agent's job here is
- * to decide a command, not to write essays). Judge calls are even smaller. */
+class GatewayError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+  ) {
+    super(message);
+  }
+}
+
+/** Sleep with jittered backoff. */
+function backoff(attempt: number): Promise<void> {
+  const baseMs = 500 * 2 ** attempt;
+  const jitterMs = Math.floor(Math.random() * 250);
+  return new Promise((r) => setTimeout(r, baseMs + jitterMs));
+}
+
+/** One call into the gateway. The agent cap is generous enough to fit a
+ * multi-paragraph response with a command at the end; judge calls override
+ * to a much smaller cap since they answer PASS/FAIL on one line. */
 async function chat(
   model: string,
   system: string,
   user: string,
-  maxTokens = 1024,
+  maxTokens = 2048,
 ): Promise<string> {
-  // An empty system prompt means "no skill" - the baseline variant. The
-  // gateway accepts an empty system message but it's cleaner to just drop
-  // the role entirely so the model isn't biased by a "you are a helpful
-  // assistant" default the gateway might inject.
+  // An empty system prompt means "no skill" - the baseline variant. Drop
+  // the role entirely so the model isn't biased by a default the gateway
+  // might inject for an empty system message.
   const messages =
     system.length > 0
       ? [
@@ -97,19 +113,47 @@ async function chat(
           { role: "user", content: user },
         ]
       : [{ role: "user", content: user }];
-  const res = await fetch(GATEWAY_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${vk}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
-  });
-  if (!res.ok) {
-    throw new Error(`gateway ${res.status} for ${model}: ${await res.text()}`);
+  const body = JSON.stringify({ model, messages, max_tokens: maxTokens });
+
+  // Retry transient failures: network errors and 5xx from the gateway.
+  // 4xx is the caller's fault (auth, model name, oversized request) and
+  // won't fix itself on retry, so let those throw immediately.
+  const maxAttempts = 3;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(GATEWAY_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${vk}`,
+          "Content-Type": "application/json",
+        },
+        body,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        const err = new GatewayError(`gateway ${res.status} for ${model}: ${text}`, res.status);
+        if (res.status >= 500 && attempt < maxAttempts - 1) {
+          lastErr = err;
+          await backoff(attempt);
+          continue;
+        }
+        throw err;
+      }
+      const json = (await res.json()) as ChatResponse;
+      return json.choices[0]?.message?.content ?? "";
+    } catch (e) {
+      if (e instanceof GatewayError) throw e;
+      // Network / DNS / abort - retry.
+      lastErr = e;
+      if (attempt < maxAttempts - 1) {
+        await backoff(attempt);
+        continue;
+      }
+      throw e;
+    }
   }
-  const json = (await res.json()) as ChatResponse;
-  return json.choices[0]?.message?.content ?? "";
+  throw lastErr;
 }
 
 function scoreRegex(response: string, scorer: RegexScorer): { score: number; details: string } {
