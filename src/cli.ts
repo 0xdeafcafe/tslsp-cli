@@ -56,6 +56,9 @@ export async function runCli(argv: string[]): Promise<number> {
     // pass already stripped it).
     return runDaemonCmd(args, sessionName);
   }
+  if (cmd === "tidy") {
+    return runTidyCmd(args, { useDaemon, useJson, useVerbose, sessionName });
+  }
 
   const tool = getTool(cmd);
   if (!tool) {
@@ -71,6 +74,7 @@ export async function runCli(argv: string[]): Promise<number> {
 }
 
 const DAEMON_SUBCOMMANDS = ["start", "stop", "restart", "list", "kill-all"];
+const TIDY_SUBCOMMANDS = ["organise-imports", "organize-imports"];
 
 /** Format a recovery hint for `unknown command: <cmd>`. Returns "" when we
  * have nothing useful to say — the caller falls back to printing rootHelp().
@@ -99,6 +103,13 @@ function suggestUnknownCommand(cmd: string): string {
       "(`--daemon` is a global flag that routes tool calls through a warm daemon; it is not a daemon-management prefix.)",
     ].join("\n");
   }
+  if (TIDY_SUBCOMMANDS.includes(cmd)) {
+    return [
+      "",
+      `tip: ${cmd} lives under the \`tidy\` umbrella. Try:`,
+      `  tslsp-cli tidy ${cmd}`,
+    ].join("\n");
+  }
   const candidates = new Set<string>(["daemon", "install"]);
   for (const t of TOOLS) {
     candidates.add(t.name);
@@ -115,6 +126,14 @@ function suggestUnknownDaemonSub(sub: string): string {
   if (picks.length === 1) return `\ndid you mean: tslsp-cli daemon ${picks[0]}?`;
   if (picks.length > 1)
     return `\ndid you mean one of: ${picks.map((p) => `tslsp-cli daemon ${p}`).join(", ")}?`;
+  return "";
+}
+
+function suggestUnknownTidySub(sub: string): string {
+  const picks = pickClosest(sub, TIDY_SUBCOMMANDS);
+  if (picks.length === 1) return `\ndid you mean: tslsp-cli tidy ${picks[0]}?`;
+  if (picks.length > 1)
+    return `\ndid you mean one of: ${picks.map((p) => `tslsp-cli tidy ${p}`).join(", ")}?`;
   return "";
 }
 
@@ -414,6 +433,46 @@ async function runDaemonCmd(argv: string[], sessionName: string): Promise<number
     process.stderr.write(`unknown daemon subcommand: ${sub}\n\n${daemonHelp()}\n`);
   }
   return 2;
+}
+
+/** `tidy` is a thin umbrella: each subcommand is registered in TOOLS under the
+ * joined name (e.g. `tidy organise-imports`) and runs through the normal tool
+ * pipeline. Keeps the umbrella nominal-only — no per-umbrella state — so the
+ * daemon side (which dispatches on tool name) works without extra wiring. */
+async function runTidyCmd(argv: string[], opts: RunToolOpts): Promise<number> {
+  const sub = argv.shift();
+  if (!sub || sub === "--help" || sub === "-h") {
+    process.stdout.write(tidyHelp() + "\n");
+    return sub ? 0 : 2;
+  }
+  // US-spelling muscle-memory alias. We register only the British spelling as
+  // a tool to avoid two TOOLS array entries that drift independently.
+  const normalised = sub === "organize-imports" ? "organise-imports" : sub;
+  const tool = getTool(`tidy ${normalised}`);
+  if (!tool) {
+    const hint = suggestUnknownTidySub(sub);
+    if (hint) {
+      process.stderr.write(`unknown tidy subcommand: ${sub}${hint}\n`);
+    } else {
+      process.stderr.write(`unknown tidy subcommand: ${sub}\n\n${tidyHelp()}\n`);
+    }
+    return 2;
+  }
+  return runTool(tool, argv, opts);
+}
+
+function tidyHelp(): string {
+  return [
+    "tslsp-cli tidy <subcommand> [args]",
+    "",
+    "Umbrella for post-edit cleanup commands. Mechanical and token-cheap —",
+    "designed to run as the final step of an edit batch instead of having",
+    "the agent re-edit imports/formatting by hand.",
+    "",
+    "subcommands:",
+    "  organise-imports   sort, dedupe, drop unused imports across files",
+    "                     (alias: organize-imports)",
+  ].join("\n");
 }
 
 function daemonHelp(): string {

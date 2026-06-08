@@ -81,25 +81,34 @@ function applyEditOnLine(line: string, e: TextEdit): string {
   return line.slice(0, e.range.start.character) + e.newText + line.slice(e.range.end.character);
 }
 
-/** Apply a WorkspaceEdit to disk and notify the LSP so its index reprojects. */
+/** Apply a WorkspaceEdit to disk and notify the LSP so its index reprojects.
+ * Skips writes whose computed text matches the file on disk — tsgo's
+ * source.organizeImports re-emits replacement edits on already-organised
+ * files, and a no-op write would still bump mtime, fire watchers, and lie
+ * about `files_changed`/`total_edits` in the summary. */
 export async function applyWorkspaceEdit(
   client: LspClient,
   edit: WorkspaceEdit,
   root: string,
 ): Promise<RenameSummary> {
   const groups = collectEdits(edit);
+  const changed: FileEdits[] = [];
   let total = 0;
   for (const g of groups) {
     const text = await readFile(g.filePath, "utf8");
     const updated = applyEditsToText(text, g.edits);
+    if (updated === text) continue;
     await writeFile(g.filePath, updated, "utf8");
+    changed.push(g);
     total += g.edits.length;
   }
-  await client.filesChangedOnDisk(groups.map((g) => g.filePath));
+  if (changed.length) {
+    await client.filesChangedOnDisk(changed.map((g) => g.filePath));
+  }
   return {
-    files_changed: groups.length,
+    files_changed: changed.length,
     total_edits: total,
-    files: groups.map((g) => uriToRel(g.uri, root)),
+    files: changed.map((g) => uriToRel(g.uri, root)),
   };
 }
 
