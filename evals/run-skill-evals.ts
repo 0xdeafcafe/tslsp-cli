@@ -1,19 +1,23 @@
 /**
- * Run the tslsp skill regression evals against one or more models.
+ * Run the tslsp skill regression evals against Opus + Sonnet, with and
+ * without SKILL.md as the system prompt. Each eval becomes four chat
+ * calls (2 models × {with-skill, baseline}); each scorer logs four
+ * rows tagged by target so the LangWatch dashboard shows both
+ * regression (this commit vs prior commits) and lift (with-skill vs
+ * baseline).
  *
- * Loads skills/tslsp/SKILL.md as the system prompt and each entry in
- * skills/tslsp/evals/evals.json as a user prompt, calls the LangWatch
- * AI Gateway, then scores each response with the eval's scorers (regex
- * or LLM-as-judge). Logs one experiment to LangWatch per CI run so the
- * dashboard shows trends across commits.
+ * Tracing is handled by the AI Gateway itself - every call we make
+ * through `gateway.langwatch.ai` becomes a trace in the LangWatch
+ * project automatically. No client-side OTel instrumentation here.
  *
  * Env:
- *   LANGWATCH_API_KEY           LangWatch project / personal API key. Required for
- *                               experiment logging via the SDK.
- *   LANGWATCH_PROJECT_ID        Required when LANGWATCH_API_KEY is a service / PAT key.
- *   LANGWATCH_VIRTUAL_AI_KEY    Virtual key (vk-lw-...) minted in the LangWatch app
- *                               under AI Gateway → Virtual Keys. Used for all model calls.
- *   GITHUB_SHA, GITHUB_PR_NUMBER   Optional metadata to tag the experiment run.
+ *   LANGWATCH_API_KEY           SDK auth for `experiments.init`.
+ *   LANGWATCH_PROJECT_ID        Required when the API key is a
+ *                               service / PAT key.
+ *   LANGWATCH_VIRTUAL_AI_KEY    Virtual key (vk-lw-...) from
+ *                               AI Gateway → Virtual Keys. Used for
+ *                               every model call (agent + judge).
+ *   GITHUB_SHA, GITHUB_PR_NUMBER  Optional metadata to tag the run.
  *
  * Run locally:
  *   pnpm run evals
@@ -74,28 +78,32 @@ interface ChatResponse {
   choices: { message: { content: string } }[];
 }
 
-/** One call into the gateway. Token cap kept tight (the agent's job here is to
- * decide a command, not to write essays). Judge calls are even smaller. */
+/** One call into the gateway. Token cap kept tight (the agent's job here is
+ * to decide a command, not to write essays). Judge calls are even smaller. */
 async function chat(
   model: string,
   system: string,
   user: string,
   maxTokens = 1024,
 ): Promise<string> {
+  // An empty system prompt means "no skill" - the baseline variant. The
+  // gateway accepts an empty system message but it's cleaner to just drop
+  // the role entirely so the model isn't biased by a "you are a helpful
+  // assistant" default the gateway might inject.
+  const messages =
+    system.length > 0
+      ? [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ]
+      : [{ role: "user", content: user }];
   const res = await fetch(GATEWAY_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${vk}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      max_tokens: maxTokens,
-    }),
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
   });
   if (!res.ok) {
     throw new Error(`gateway ${res.status} for ${model}: ${await res.text()}`);
@@ -154,14 +162,29 @@ const langwatch = new LangWatch();
 const experiment = await langwatch.experiments.init(experimentName, { runId });
 console.log(`LangWatch experiment: ${experimentName} (run ${runId})`);
 
+// The lift baseline: an empty system prompt isolates the skill's
+// contribution. Each eval row runs against both variants per model.
+const VARIANTS = [
+  { suffix: "with-skill", system: skillMd },
+  { suffix: "baseline", system: "" },
+] as const;
+
 interface DatasetRow {
   index: number;
   eval: Eval;
   model: string;
+  variant: (typeof VARIANTS)[number];
 }
 
-const dataset: DatasetRow[] = evalsFile.evals.flatMap((e, i) =>
-  MODELS.map((model, mi) => ({ index: i * MODELS.length + mi, eval: e, model })),
+const dataset: DatasetRow[] = evalsFile.evals.flatMap((ev, ei) =>
+  MODELS.flatMap((model, mi) =>
+    VARIANTS.map((variant, vi) => ({
+      index: ei * MODELS.length * VARIANTS.length + mi * VARIANTS.length + vi,
+      eval: ev,
+      model,
+      variant,
+    })),
+  ),
 );
 
 let passes = 0;
@@ -169,15 +192,24 @@ let fails = 0;
 const lines: string[] = [];
 
 await experiment.run(dataset, async ({ item, index }) => {
-  const { eval: ev, model } = item;
+  const { eval: ev, model, variant } = item;
   const modelShort = model.split("/").pop() ?? model;
+  const targetName = `${modelShort}-${variant.suffix}`;
+  const targetMetadata = { model, skill: variant.suffix === "with-skill" };
+
   let response: string;
   try {
-    response = await chat(model, skillMd, ev.prompt);
+    response = await chat(model, variant.system, ev.prompt);
   } catch (e) {
     const msg = String((e as Error).message ?? e);
-    lines.push(`  ${ev.eval_name} [${modelShort}]  agent call FAILED: ${msg}`);
-    experiment.log("agent_call_error", { index, score: 0, details: msg, target: modelShort });
+    lines.push(`  ${ev.eval_name} [${targetName}]  agent call FAILED: ${msg}`);
+    experiment.log("agent_call_error", {
+      index,
+      score: 0,
+      details: msg,
+      target: targetName,
+      metadata: targetMetadata,
+    });
     return;
   }
 
@@ -190,31 +222,35 @@ await experiment.run(dataset, async ({ item, index }) => {
           : await scoreLlmJudge(response, scorer, ev.prompt);
     } catch (e) {
       const msg = String((e as Error).message ?? e);
-      lines.push(`  ${ev.eval_name}.${scorer.name} [${modelShort}]  scorer error: ${msg}`);
+      lines.push(`  ${ev.eval_name}.${scorer.name} [${targetName}]  scorer error: ${msg}`);
       experiment.log(`${ev.eval_name}.${scorer.name}`, {
         index,
         score: 0,
         details: `scorer error: ${msg}`,
-        target: modelShort,
+        target: targetName,
+        metadata: targetMetadata,
       });
       continue;
     }
     if (result.score) passes++;
     else fails++;
     const flag = result.score ? "PASS" : "FAIL";
-    lines.push(`  ${flag}  ${ev.eval_name}.${scorer.name} [${modelShort}]  ${result.details}`);
+    lines.push(`  ${flag}  ${ev.eval_name}.${scorer.name} [${targetName}]  ${result.details}`);
     experiment.log(`${ev.eval_name}.${scorer.name}`, {
       index,
       score: result.score,
       passed: result.score === 1,
       details: result.details,
-      target: modelShort,
+      target: targetName,
+      metadata: targetMetadata,
     });
   }
 });
 
 console.log("");
 console.log(`Results (${passes + fails} scorers, ${passes} pass / ${fails} fail):`);
+// Group output by eval + scorer so with-skill vs baseline reads cleanly.
+lines.sort();
 for (const l of lines) console.log(l);
 console.log("");
 console.log(`Dashboard: https://app.langwatch.ai`);

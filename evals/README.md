@@ -1,16 +1,24 @@
 # Skill regression evals
 
-`pnpm run evals` runs every prompt in `skills/tslsp/evals/evals.json` against the current `skills/tslsp/SKILL.md`, scores each response, and logs the run to LangWatch as an experiment. Trends across commits show up on the LangWatch dashboard, so a PR that makes the skill worse is visible the moment it lands.
+`pnpm run evals` runs every prompt in `skills/tslsp/evals/evals.json` against the current `skills/tslsp/SKILL.md`, scores each response, and logs the run to LangWatch as an experiment. The dashboard then shows two things: per-commit regression (this commit vs prior commits) and per-commit lift (skill-on vs skill-off).
 
 ## How a single run works
 
-For each eval, for each model (`anthropic/claude-opus-4-7` and `anthropic/claude-sonnet-4-6`):
+For each eval, for each model (`anthropic/claude-opus-4-7` and `anthropic/claude-sonnet-4-6`), the script runs two variants:
 
-1. The script calls the **LangWatch AI Gateway** with `SKILL.md` as the system prompt and the eval's `prompt` as the user message.
-2. Each scorer attached to the eval runs against the response:
-   - `regex` - pattern match (cheap, deterministic).
-   - `llm_judge` - a second gateway call to `anthropic/claude-haiku-4-5` asks "did this response meet the criterion? PASS/FAIL".
-3. Every scorer outcome is logged to the LangWatch experiment with the model name as the target, so the dashboard can render per-model bar charts and trends.
+- `<model>-with-skill` - `SKILL.md` as the system prompt.
+- `<model>-baseline` - empty system prompt. Tells us how much lift the skill actually provides; without it we only know whether SKILL.md got worse, not whether it's helping at all.
+
+That's 4 agent calls per eval. Each response then goes through every scorer attached to the eval:
+
+- `regex` - pattern match (cheap, deterministic).
+- `llm_judge` - a second gateway call to `anthropic/claude-haiku-4-5` asks "did this response meet the criterion? PASS/FAIL".
+
+Every scorer outcome is logged to the LangWatch experiment with the target name as the comparison axis, so the dashboard renders per-target bar charts and per-target trend lines.
+
+## Tracing
+
+There is none on the client. Every call we make through `gateway.langwatch.ai` is traced server-side by the gateway itself - they show up in the LangWatch project as proper LLM traces without any OTel scaffolding in this repo. Adding our own spans would just produce a second, thinner trace tree.
 
 ## Running it
 
@@ -23,7 +31,7 @@ export LANGWATCH_VIRTUAL_AI_KEY=vk-lw-...       # from https://app.langwatch.ai 
 pnpm run evals
 ```
 
-The script prints a per-scorer pass/fail summary and a dashboard link. It always exits 0 (the experiment is informational). Treat regressions visually via the LangWatch dashboard.
+The script prints a per-scorer pass/fail summary (sorted so each `eval.scorer` block shows its four variant rows together) and a dashboard link. It always exits 0 - regressions are read visually from the dashboard rather than failing CI.
 
 ### From a PR
 
@@ -46,11 +54,13 @@ Rule of thumb: prefer `regex` for "did the agent reach for this specific command
 
 A routing skill (one that lives in another agent's context, like ours) isn't a runnable agent in the LangWatch SDK's usual sense. We wrap it: the "agent" is the gateway call with `SKILL.md` as the system prompt, the "input" is the eval prompt, the "output" is whatever the model produces. Scorers check whether the skill routed correctly.
 
-## A note on LangWatch Prompts vs Datasets
+The with-skill / baseline split is borrowed from the `/skill-creator` workflow. Their iteration loop spawns subagents both ways to compare; we mirror that inside one LangWatch experiment so the comparison is permanent on the dashboard rather than living only in a local iteration run.
 
-LangWatch has two separate features that look like they could host this stuff. They don't fit, for opposite reasons:
+## Why nothing else is in LangWatch
 
-- **LangWatch Prompts** (versioned system-prompt management) - tempting home for SKILL.md, but SKILL.md ships inside the npm package and gets copied into user installs via `tslsp-cli install --skills`. The canonical copy has to stay in the repo.
-- **LangWatch Datasets** (test data, editable in the web UI) - tempting home for the eval prompts, but they version alongside SKILL.md. Changing the skill and the evals together in one commit is the whole point. A web-UI dataset drifts away from the code reviewing it.
+We deliberately don't mirror `SKILL.md` into LangWatch Prompts or `evals.json` into LangWatch Datasets. They look like good homes, but:
 
-Both stay in the repo. LangWatch's job here is the experiment dashboard - the trend line across commits, which is the bit you genuinely want hosted and web-accessible rather than living in a git ref.
+- `SKILL.md` ships inside the npm package and gets copied into user installs via `tslsp-cli install --skills`. The canonical copy has to stay in the repo, and the eval has to run against the PR's on-disk version, not a server-fetched one.
+- `evals.json` versions alongside `SKILL.md`. The whole point of `@evals` on a PR is that the eval set under test moves with the skill change. A web-UI-editable dataset would drift.
+
+A mirror would only buy us cosmetic UI visibility, in exchange for an extra sync step that can fail in CI. LangWatch's job here is the experiment dashboard - the trend line across commits and the cross-variant comparison, which is the bit you genuinely want hosted and web-accessible rather than living in a git ref.
