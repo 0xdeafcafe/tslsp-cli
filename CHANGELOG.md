@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.4.0...v0.5.0) (2026-06-08)
+
+
+### Features
+
+* marketplace-first install + --with-agents-md for Codex ([#24](https://github.com/0xdeafcafe/tslsp-cli/issues/24)) ([78f09e9](https://github.com/0xdeafcafe/tslsp-cli/commit/78f09e924473826ad645108c5625a978ed2df2eb))
+
 ## [0.4.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.3.0...v0.4.0) (2026-06-04)
 
 
