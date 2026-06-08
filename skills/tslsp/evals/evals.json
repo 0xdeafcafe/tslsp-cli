@@ -54,7 +54,7 @@
         {
           "type": "llm_judge",
           "name": "did_not_over_query",
-          "criterion": "Did the response use AT MOST two tslsp-cli commands (typically `definition` + `references`, or `references` alone)? A response that chains `definition` + `references` + `call-hierarchy` + `hover` to answer this simple two-part question fails (over-use; `references` alone covers call sites)."
+          "criterion": "Does the response RECOMMEND at most two tslsp-cli commands (typically `definition` + `references`, or `references` alone) for the user to run? A plan that chains `definition` + `references` + `call-hierarchy` + `hover` to answer this simple two-part question fails (over-use; `references` alone covers call sites). The agent's job here is to recommend the right command(s); it does NOT need to have executed them - this eval has no executing environment."
         }
       ]
     },
@@ -66,12 +66,12 @@
         {
           "type": "llm_judge",
           "name": "did_not_use_heavy_tslsp",
-          "criterion": "Does the response avoid heavy tslsp-cli commands (rename, references, find-symbol, call-hierarchy) for this edit? The task is a string-literal argument addition, not symbol-aware refactoring. Light use of `tslsp-cli diagnostics` after the edit (as the skill's verification step) is acceptable; reaching for rename/references/find-symbol is NOT."
+          "criterion": "Does the agent's RECOMMENDED approach avoid heavy tslsp-cli commands (rename, references, find-symbol, call-hierarchy) for this edit? The task is a string-literal argument addition, not symbol-aware refactoring. Light use of `tslsp-cli diagnostics` after the edit (as the skill's verification step) is acceptable; reaching for rename/references/find-symbol is NOT. Judge the agent's proposed plan; this eval has no executing environment so 'didn't actually run the edit' is NOT a fail reason."
         },
         {
           "type": "regex",
-          "name": "used_direct_edit",
-          "pattern": "Edit|MultiEdit|console\\.log\\(['\"]result"
+          "name": "proposed_correct_new_line",
+          "pattern": "console\\.log\\s*\\(\\s*['\"`]result:?['\"`]?\\s*,\\s*doubled\\s*\\)|s/console\\.log\\(doubled\\)/console\\.log\\(['\"]result"
         }
       ]
     }
