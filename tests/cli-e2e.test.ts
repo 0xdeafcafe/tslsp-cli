@@ -399,6 +399,46 @@ describe("CLI e2e", () => {
     expect(md).toMatch(/tslsp-cli:auto-nudge/);
   });
 
+  it("install --skills --with-agents-md appends a nudge to AGENTS.md", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const { code, stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-agents-md"],
+      tmpHome,
+    );
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/added skill nudge/);
+    const md = readFileSync(resolve(tmpHome, "AGENTS.md"), "utf8");
+    expect(md).toMatch(/tslsp-cli:auto-nudge/);
+    expect(md).toMatch(/use `tslsp-cli` instead of/);
+    // The block must stay agent-neutral — no Claude Code-only tool names.
+    expect(md).not.toMatch(/MultiEdit/);
+    expect(md).not.toMatch(/\.claude\/skills\//);
+  });
+
+  it("install --skills --with-agents-md is idempotent", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    await runCli(["install", "--skills", "--project", "--with-agents-md"], tmpHome);
+    const { stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-agents-md"],
+      tmpHome,
+    );
+    expect(stdout).toMatch(/already nudges/);
+    const md = readFileSync(resolve(tmpHome, "AGENTS.md"), "utf8");
+    const occurrences = md.match(/tslsp-cli:auto-nudge/g) ?? [];
+    expect(occurrences.length).toBe(1);
+  });
+
+  it("install --skills with both --with-claude-md and --with-agents-md writes both files", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const { code } = await runCli(
+      ["install", "--skills", "--project", "--with-claude-md", "--with-agents-md"],
+      tmpHome,
+    );
+    expect(code).toBe(0);
+    expect(readFileSync(resolve(tmpHome, "CLAUDE.md"), "utf8")).toMatch(/tslsp-cli:auto-nudge/);
+    expect(readFileSync(resolve(tmpHome, "AGENTS.md"), "utf8")).toMatch(/tslsp-cli:auto-nudge/);
+  });
+
   it("rejects schema-violating args (--limit 0 fails .positive())", async () => {
     const { code, stderr } = await runCli(["find-symbol", "add", "--limit", "0"]);
     expect(code).toBe(2);

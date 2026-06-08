@@ -12,13 +12,30 @@ This is not "a faster grep." It's the difference between a refactor that compile
 
 ## How to invoke
 
-Run every command through `npx --no-install`:
+**Precondition — check this first, every session.** Before running any tslsp-cli command, verify it's available:
+
+```bash
+npx --no-install @0xdeafcafe/tslsp-cli --version
+```
+
+If that errors with anything like "not installed", "command not found", or "could not determine executable", **STOP**. Tell the user:
+
+> The `tslsp` skill requires `@0xdeafcafe/tslsp-cli` to be installed. Run one of:
+>
+> - `npm i -g @0xdeafcafe/tslsp-cli` (recommended — every project on this machine)
+> - `npm i -D @0xdeafcafe/tslsp-cli` (project-local devDependency)
+>
+> Then retry the request.
+
+Do not fall back to grep / string-edit / `mv` / `git mv` / `tsc` for identifier work in the meantime — those tools are type-blind and will silently miss re-exports. Wait for the install.
+
+Once the precondition passes, run every command through `npx --no-install`:
 
 ```bash
 npx --no-install @0xdeafcafe/tslsp-cli <command> [args...]
 ```
 
-`--no-install` is deliberate — it uses the project-local or globally-installed `@0xdeafcafe/tslsp-cli` and fails loudly if neither is present, instead of silently fetching a random version mid-refactor. If it errors with "not installed," tell the user to run `npm i -g @0xdeafcafe/tslsp-cli` (or add it as a devDependency) and stop.
+`--no-install` is deliberate — it uses the project-local or globally-installed `@0xdeafcafe/tslsp-cli` and fails loudly if neither is present, instead of silently fetching a random version mid-refactor.
 
 In the examples below, `tslsp-cli` is shorthand for `npx --no-install @0xdeafcafe/tslsp-cli`. Type it out in full when you actually invoke it.
 
@@ -169,3 +186,15 @@ npx --no-install @0xdeafcafe/tslsp-cli install --skills --with-claude-md
 ```
 
 `--with-claude-md` appends a short routing block to `CLAUDE.md` (idempotent — guarded by a marker comment). Project scope writes to `./CLAUDE.md`; user scope writes to `~/.claude/CLAUDE.md`.
+
+For Codex (or any agent that reads `AGENTS.md`), the parallel flag is `--with-agents-md`:
+
+```bash
+# Project: writes ./AGENTS.md.
+npx --no-install @0xdeafcafe/tslsp-cli install --skills --project --with-agents-md
+
+# User: writes ~/.codex/AGENTS.md.
+npx --no-install @0xdeafcafe/tslsp-cli install --skills --with-agents-md
+```
+
+Both flags can be passed together — same marker comment guards both files, so re-runs are idempotent.
