@@ -15,3 +15,6 @@ coverage/
 # probe sandbox state - generated locally
 probe/node_modules/
 probe/package-lock.json
+
+# local agent state — Claude Code worktrees, skill-iteration workspaces, etc.
+.claude/

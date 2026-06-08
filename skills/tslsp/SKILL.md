@@ -146,6 +146,21 @@ tslsp-cli diagnostics  'src/api/**/*.ts'
 
 Output is labeled `=== NAME ===` per item that had findings. Clean items are dropped — if every item in the batch was empty, you get a single short line (e.g. `no diagnostics`) instead of N redundant blocks. For diagnostics specifically, batched output is prefixed with a count summary (`3 errors, 1 warn across 2 files`) so you can decide whether to drill in.
 
+## Pick one tool per question
+
+If the question is "where is X used?", `references` is the answer. You don't also need `definition`, `call-hierarchy`, and `hover` — they answer different questions. Running all four just to answer one is the most common form of skill over-use.
+
+| Question                                              | Tool                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------ |
+| Where is X declared?                                  | `definition`                                                 |
+| Where is X used?                                      | `references` (or `references --summary` for popular symbols) |
+| Who calls X (caller function shapes, not just sites)? | `call-hierarchy --direction incoming`                        |
+| What's X's signature / JSDoc?                         | `hover`                                                      |
+| What types implement X?                               | `implementation`                                             |
+| Type-declared shape vs value shape of X?              | `type-definition`                                            |
+
+`references` already lists every call site, so don't chain `call-hierarchy` after it unless you specifically need the calling functions' shapes. A two-question prompt ("where is X defined AND what calls it?") earns `definition` + `references` — not `definition` + `references` + `call-hierarchy` + `hover`.
+
 ## Verification — non-optional
 
 After any non-trivial edit:
@@ -169,6 +184,8 @@ tslsp-cli tidy organise-imports 'src/api/**/*.ts'            # glob — whole fe
 Sorts external before relative, merges duplicate imports, drops the unused ones. Doing this by hand with `Edit`/`MultiEdit` is the most common token-burn-with-nothing-to-show-for-it pattern in a TS session — `tidy` is the type-aware shortcut. US alias `organize-imports` works too.
 
 `--changed` needs `git` in PATH and a `.git` somewhere above the cwd; if neither holds, it fails loudly so you know to pass paths explicitly.
+
+**One nuance worth knowing:** `tidy organise-imports` is conservative about removal — it only drops imports the TS program considers unused. If you hand-edit imports yourself instead of running this, you risk dropping bindings that are technically referenced (e.g. by a `const _unused = readFileSync;` alias, or by an unused-looking `import "side-effect.js"`). Let tsgo make the call.
 
 ## Speed: `--daemon` for tight refactor loops
 
