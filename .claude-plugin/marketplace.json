@@ -1,5 +1,5 @@
 {
-  "name": "tslsp",
+  "name": "0xdeafcafe-tslsp",
   "description": "Type-aware TypeScript/JavaScript code intelligence for Claude Code, backed by tsgo.",
   "owner": {
     "name": "Alexander Forbes-Reed",
