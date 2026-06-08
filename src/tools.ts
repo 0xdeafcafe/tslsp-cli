@@ -513,6 +513,25 @@ const rename = defineTool({
   },
   handler: async ({ new_name, dry_run, ...loc }, ctx) =>
     withLocator(ctx, loc as SymbolLocator, async ({ client, root, uri, position }) => {
+      // Fast-fail when the position isn't a renamable identifier (keyword,
+      // literal, whitespace, comment) before issuing the destructive request.
+      // We advertise `prepareSupport: true` in client capabilities, so tsgo
+      // honours this. A `null` response means "not renamable here"; anything
+      // else (Range, { range, placeholder }, or { defaultBehavior: true })
+      // means proceed. We swallow request errors so a server that doesn't
+      // actually implement prepareRename falls through to the rename call,
+      // where the user still sees the original less-helpful error.
+      try {
+        const prep = await client.request<unknown>("textDocument/prepareRename", {
+          textDocument: { uri },
+          position,
+        });
+        if (prep === null) {
+          return fail("cannot rename at this position (not a renamable identifier)");
+        }
+      } catch {
+        // Server lacks prepareRename support — fall through to the rename call.
+      }
       const edit = await client.request<WorkspaceEdit | null>("textDocument/rename", {
         textDocument: { uri },
         position,
