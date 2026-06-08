@@ -18,7 +18,7 @@ Two clients are first-class: Claude Code (via the bundled plugin marketplace) an
 
 ```
 /plugin marketplace add 0xdeafcafe/tslsp-cli
-/plugin install tslsp@tslsp
+/plugin install tslsp@0xdeafcafe-tslsp
 ```
 
 The plugin bundles a routing skill that tells Claude to use `tslsp-cli` instead of grep / string-edit / `mv` for any TS/JS identifier work — no `CLAUDE.md` editing required. The skill drives the CLI, so install that too:
@@ -27,7 +27,7 @@ The plugin bundles a routing skill that tells Claude to use `tslsp-cli` instead 
 npm i -g @0xdeafcafe/tslsp-cli
 ```
 
-The skill instructs Claude to verify the CLI is on `PATH` at the start of each session; a missing install surfaces immediately rather than mid-refactor. Update the skill with `/plugin marketplace update tslsp`.
+The skill instructs Claude to verify the CLI is on `PATH` at the start of each session; a missing install surfaces immediately rather than mid-refactor. Update the skill with `/plugin marketplace update 0xdeafcafe-tslsp`.
 
 ### Codex
 
