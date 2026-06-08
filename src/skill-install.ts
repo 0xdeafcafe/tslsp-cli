@@ -94,11 +94,16 @@ export async function installSkills(opts: InstallOpts): Promise<InstallResult> {
     );
   }
 
+  // Tips fire only on a brand-new skill install when the user didn't already
+  // pick an md target — once they've signalled which host they care about, we
+  // don't pester them about the other one.
+  const showTips = skillInstalled && !opts.withClaudeMd && !opts.withAgentsMd;
+
   if (opts.withClaudeMd) {
     const r = await ensureNudge(targetClaudeMdPath(opts.scope, opts.cwd));
     if (r.updated) lines.push(`updated ${r.path} (added skill nudge)`);
     else lines.push(`${r.path} already nudges; left as-is`);
-  } else if (skillInstalled) {
+  } else if (showTips) {
     const md = targetClaudeMdPath(opts.scope, opts.cwd);
     lines.push(`  tip: pass --with-claude-md to auto-add the routing nudge to ${md}`);
   }
@@ -107,9 +112,7 @@ export async function installSkills(opts: InstallOpts): Promise<InstallResult> {
     const r = await ensureNudge(targetAgentsMdPath(opts.scope, opts.cwd));
     if (r.updated) lines.push(`updated ${r.path} (added skill nudge)`);
     else lines.push(`${r.path} already nudges; left as-is`);
-  } else if (skillInstalled && !opts.withClaudeMd) {
-    // Only mention the Codex tip when we didn't already steer them at the
-    // Claude one — both tips at once is noise on a fresh install.
+  } else if (showTips) {
     const md = targetAgentsMdPath(opts.scope, opts.cwd);
     lines.push(`  tip: pass --with-agents-md to do the same for Codex's ${md}`);
   }
