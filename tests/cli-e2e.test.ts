@@ -439,6 +439,26 @@ describe("CLI e2e", () => {
     expect(readFileSync(resolve(tmpHome, "AGENTS.md"), "utf8")).toMatch(/tslsp-cli:auto-nudge/);
   });
 
+  it("install --skills --with-agents-md alone does not nag with the claude-md tip", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const { stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-agents-md"],
+      tmpHome,
+    );
+    // The user picked Codex; don't push them toward Claude on the same run.
+    expect(stdout).not.toMatch(/pass --with-claude-md/);
+  });
+
+  it("install --skills --with-claude-md alone does not nag with the agents-md tip", async () => {
+    const tmpHome = mkdtempSync(resolve(tmpdir(), "tslsp-skill-"));
+    const { stdout } = await runCli(
+      ["install", "--skills", "--project", "--with-claude-md"],
+      tmpHome,
+    );
+    // Symmetric to the agents-md case above.
+    expect(stdout).not.toMatch(/pass --with-agents-md/);
+  });
+
   it("rejects schema-violating args (--limit 0 fails .positive())", async () => {
     const { code, stderr } = await runCli(["find-symbol", "add", "--limit", "0"]);
     expect(code).toBe(2);
