@@ -1,0 +1,33 @@
+{
+  "skill_name": "tslsp",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "tidy-after-edit-batch",
+      "prompt": "I just hand-edited the imports in `src/messy.ts` to add a couple of dependencies. Can you clean up the import order (and drop anything unused) so it's tidy?",
+      "expected_output": "Agent runs `tslsp-cli tidy organise-imports src/messy.ts` (or equivalent invocation). File ends up with imports sorted external-then-relative, `./math` imports merged, and `_unused = readFileSync` retained because `readFileSync` is referenced.",
+      "files": ["scratch/src/messy.ts"]
+    },
+    {
+      "id": 1,
+      "eval_name": "rename-common-name",
+      "prompt": "Rename the `add` function to `sum` across this project.",
+      "expected_output": "Agent runs `tslsp-cli rename --symbol add --new-name sum --dry-run` first (per skill guidance for common names), then applies. Both `src/math.ts` (declaration) and `src/index.ts` (call site) are updated. No regex/grep approach.",
+      "files": ["scratch/src/index.ts", "scratch/src/math.ts"]
+    },
+    {
+      "id": 2,
+      "eval_name": "find-and-trace-symbol",
+      "prompt": "Where is `double` defined, and what calls it? I want to understand it before I touch it.",
+      "expected_output": "Agent runs `tslsp-cli definition --symbol double` and `tslsp-cli references --symbol double` (or `call-hierarchy --direction incoming`). Reports the declaration at `src/math.ts` and the call sites in `src/index.ts` (and inside `double` itself which calls `add`).",
+      "files": ["scratch/src/index.ts", "scratch/src/math.ts"]
+    },
+    {
+      "id": 3,
+      "eval_name": "anti-trigger-non-identifier-edit",
+      "prompt": "In `src/index.ts`, change the `console.log(doubled)` line to log a labelled string instead: `console.log('result:', doubled)`.",
+      "expected_output": "Agent uses Edit/Write to change the one line. Does NOT reach for tslsp-cli for this task (target is a function-call argument, not an identifier rename or navigation). Light tslsp use is acceptable (e.g. diagnostics after) but the core change should be a direct edit.",
+      "files": ["scratch/src/index.ts"]
+    }
+  ]
+}
