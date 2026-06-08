@@ -1,11 +1,20 @@
 name: skill-evals
 
-# Opt-in by PR comment so we don't burn API tokens on PRs that don't touch the
-# skill. Comment `@evals` (anywhere in the body) on a PR to fire this workflow
-# against that PR's HEAD commit.
+# Two ways to trigger:
+#  1. `@evals` in a PR comment (from a maintainer) - runs against the PR's
+#     head SHA and posts the result back as a comment.
+#  2. Manual dispatch from the Actions tab - runs against an arbitrary
+#     ref. No PR to post back to, so the result is in the job log + the
+#     LangWatch dashboard.
 on:
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to run the evals against."
+        required: false
+        default: "main"
 
 permissions:
   contents: read
@@ -13,21 +22,25 @@ permissions:
 
 jobs:
   evals:
-    # Trusted commenters only. `issue_comment` checks out the PR's head SHA
-    # and runs that code with LANGWATCH_VIRTUAL_AI_KEY in the environment,
-    # so a drive-by PR could otherwise swap the script and exfiltrate the
-    # gateway key. Maintainers can fire @evals; anyone else's comment is
-    # silently ignored.
+    # Accept either trigger. For issue_comment, gate on author_association
+    # because the job checks out the PR's head SHA and runs that code with
+    # LANGWATCH_VIRTUAL_AI_KEY in env - a drive-by PR could otherwise swap
+    # the script and exfiltrate the gateway key. workflow_dispatch is
+    # already restricted to users with write access to the repo, so no
+    # extra gate is needed there.
     if: |
-      github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '@evals') &&
-      (github.event.comment.author_association == 'OWNER' ||
-       github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'COLLABORATOR')
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '@evals') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: react to comment
+        if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -36,21 +49,26 @@ jobs:
             "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
             -f content=eyes
 
-      - name: resolve PR ref
-        id: pr
+      - name: resolve ref
+        id: ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PR_JSON=$(gh api "/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}")
-          echo "sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
-          echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_JSON=$(gh api "/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}")
+            echo "sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          else
+            # workflow_dispatch - resolve the user-supplied ref (branch/tag/SHA) to a SHA.
+            SHA=$(gh api "/repos/${{ github.repository }}/commits/${{ inputs.ref }}" --jq .sha)
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          fi
 
       # Third-party Actions pinned by commit SHA - tag refs can be moved by
       # the publisher (the actions/checkout v4 tag itself updates whenever a
       # v4.x.y is cut), and this workflow runs with privileged secrets.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ steps.pr.outputs.sha }}
+          ref: ${{ steps.ref.outputs.sha }}
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
@@ -69,19 +87,20 @@ jobs:
           LANGWATCH_API_KEY: ${{ secrets.LANGWATCH_API_KEY }}
           LANGWATCH_PROJECT_ID: ${{ secrets.LANGWATCH_PROJECT_ID }}
           LANGWATCH_VIRTUAL_AI_KEY: ${{ secrets.LANGWATCH_VIRTUAL_AI_KEY }}
-          GITHUB_SHA: ${{ steps.pr.outputs.sha }}
+          GITHUB_SHA: ${{ steps.ref.outputs.sha }}
+          # PR number is only available for issue_comment; left unset for dispatch.
           GITHUB_PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -o pipefail
           pnpm run evals 2>&1 | tee /tmp/evals.log
 
       - name: comment on PR
-        if: always()
+        if: always() && github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo "## Skill evals · \`${{ steps.pr.outputs.sha }}\`"
+            echo "## Skill evals · \`${{ steps.ref.outputs.sha }}\`"
             echo ""
             if [ "${{ steps.run.outcome }}" = "success" ]; then
               echo "Run completed. Inspect this commit vs main in [LangWatch](https://app.langwatch.ai)."
