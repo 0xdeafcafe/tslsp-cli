@@ -13,7 +13,7 @@
       "description": "Routes any TS/JS symbol work (find usages, jump-to-def, rename, move file with import rewrites, hover, diagnostics, call hierarchy) through tsgo instead of Grep/Edit/mv. Requires the `tslsp-cli` binary on PATH — install with `npm i -g @0xdeafcafe/tslsp-cli` or run via `npx @0xdeafcafe/tslsp-cli`.",
       "category": "development",
       "keywords": ["typescript", "javascript", "lsp", "tsgo", "refactor", "rename"],
-      "homepage": "https://github.com/0xdeafcafe/tslsp-mcp"
+      "homepage": "https://github.com/0xdeafcafe/tslsp-cli"
     }
   ]
 }

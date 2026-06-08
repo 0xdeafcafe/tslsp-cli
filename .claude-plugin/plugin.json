@@ -7,8 +7,8 @@
     "email": "me@alex.forbes.red",
     "url": "https://github.com/0xdeafcafe"
   },
-  "homepage": "https://github.com/0xdeafcafe/tslsp-mcp",
-  "repository": "https://github.com/0xdeafcafe/tslsp-mcp",
+  "homepage": "https://github.com/0xdeafcafe/tslsp-cli",
+  "repository": "https://github.com/0xdeafcafe/tslsp-cli",
   "license": "MIT",
   "keywords": ["typescript", "javascript", "lsp", "tsgo", "refactor", "rename", "code-intelligence"]
 }

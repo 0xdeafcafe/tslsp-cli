@@ -209,7 +209,8 @@ async function runInstall(argv: string[]): Promise<number> {
     argv.includes("--project") || argv.includes("--local") ? "project" : "user";
   const force = argv.includes("--force");
   const withClaudeMd = argv.includes("--with-claude-md");
-  const result = await installSkills({ scope, force, withClaudeMd });
+  const withAgentsMd = argv.includes("--with-agents-md");
+  const result = await installSkills({ scope, force, withClaudeMd, withAgentsMd });
   for (const line of result.lines) process.stdout.write(line + "\n");
   return result.ok ? 0 : 1;
 }
@@ -506,7 +507,7 @@ export function toolHelp(tool: ToolDef): string {
 
 function installHelp(): string {
   return [
-    "tslsp-cli install --skills [--project] [--force] [--with-claude-md]",
+    "tslsp-cli install --skills [--project] [--force] [--with-claude-md] [--with-agents-md]",
     "",
     "Install the tslsp skill so Claude Code (and other skill-aware agents) can",
     "discover it and route TypeScript navigation/refactor work through this CLI.",
@@ -519,6 +520,8 @@ function installHelp(): string {
     "  --with-claude-md   also append a routing nudge to CLAUDE.md (project scope:",
     "                     ./CLAUDE.md; user scope: ~/.claude/CLAUDE.md). Idempotent",
     "                     — guarded by a marker comment so re-runs don't duplicate.",
+    "  --with-agents-md   same as --with-claude-md but for Codex's AGENTS.md",
+    "                     (project: ./AGENTS.md; user: ~/.codex/AGENTS.md).",
   ].join("\n");
 }
 
