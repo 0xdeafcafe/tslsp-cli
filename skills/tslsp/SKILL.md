@@ -110,6 +110,9 @@ tslsp-cli call-hierarchy --symbol handleRequest --direction outgoing
 # Quick-fixes / organize imports.
 tslsp-cli code-action --file src/x.ts --kind source.organizeImports
 tslsp-cli code-action --file src/x.ts --kind source.organizeImports --apply 0
+# For a batch — every file you edited in one call — prefer:
+tslsp-cli tidy organise-imports src/x.ts src/y.ts src/z.ts
+tslsp-cli tidy organise-imports --changed              # git diff vs HEAD
 ```
 
 Every command takes `--help`. Output is line-oriented: `path:line[:col]  kind name`.
@@ -152,6 +155,20 @@ tslsp-cli diagnostics --file <the file you touched>
 ```
 
 Code that compiles in your head isn't code that compiles in TypeScript. A missed export, a wrong arity, a stale signature — diagnostics catches them. Run it before you say "done."
+
+## Tidy — run after an edit batch
+
+After a batch of edits — _before_ you say "done" — organise the imports in every file you touched. One call, no per-file looping:
+
+```bash
+tslsp-cli tidy organise-imports src/foo.ts src/bar.ts        # explicit batch
+tslsp-cli tidy organise-imports --changed                    # git diff vs HEAD (staged + unstaged)
+tslsp-cli tidy organise-imports 'src/api/**/*.ts'            # glob — whole feature dir
+```
+
+Sorts external before relative, merges duplicate imports, drops the unused ones. Doing this by hand with `Edit`/`MultiEdit` is the most common token-burn-with-nothing-to-show-for-it pattern in a TS session — `tidy` is the type-aware shortcut. US alias `organize-imports` works too.
+
+`--changed` needs `git` in PATH and a `.git` somewhere above the cwd; if neither holds, it fails loudly so you know to pass paths explicitly.
 
 ## Speed: `--daemon` for tight refactor loops
 

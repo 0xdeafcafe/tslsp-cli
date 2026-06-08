@@ -1,4 +1,6 @@
-import { isAbsolute, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import {
   allKindNames,
   capHover,
@@ -24,6 +26,7 @@ import {
   DocumentSymbol,
   Hover,
   Location,
+  LspClient,
   SymbolInformation,
   WorkspaceEdit,
 } from "./lsp-client.js";
@@ -950,6 +953,133 @@ function overlaps(
   return aStart <= bEnd && bStart <= aEnd;
 }
 
+/** Whole-file source.organizeImports — open, wait for diagnostics, request
+ * the action, resolve if `edit` was deferred, apply. tsgo defers the edit
+ * for source actions often enough that the resolve hop is mandatory; we
+ * silently fall through on resolve failure so a null return upstream means
+ * "no edit available" rather than masking a different bug. */
+async function runOrganizeImports(
+  client: LspClient,
+  filePath: string,
+  root: string,
+): Promise<{ files_changed: number; total_edits: number; files: string[] } | null> {
+  const uri = await client.syncOpen(filePath);
+  await waitForDiagnostics(() => client.diagnosticsFor(uri), 2000);
+  const actions =
+    (await client.request<CodeAction[] | null>("textDocument/codeAction", {
+      textDocument: { uri },
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+      context: { diagnostics: [], only: ["source.organizeImports"] },
+    })) ?? [];
+  const target = actions.find((a) => a && typeof a === "object" && "title" in a);
+  if (!target) return null;
+  let resolved = target;
+  if (!resolved.edit) {
+    try {
+      const r = await client.request<CodeAction | null>("codeAction/resolve", target);
+      if (r) resolved = r;
+    } catch {
+      // Fall through; null below if `edit` still missing.
+    }
+  }
+  if (!resolved.edit) return null;
+  return applyWorkspaceEdit(client, resolved.edit, root);
+}
+
+/** Source-file extensions tsgo will actually process. Mirrors the set used by
+ * `expandFileArgs` to walk directories — kept here as a regex because we also
+ * filter the (possibly user-supplied) literal/git list. */
+const TS_LIKE_EXT_RE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
+
+/** Walk upward until we see a `.git`. Accepts directory OR file (`.git` is a
+ * file in worktrees and submodules). */
+function findGitRoot(start: string): string | undefined {
+  let dir = start;
+  while (true) {
+    if (existsSync(resolve(dir, ".git"))) return dir;
+    const parent = resolve(dir, "..");
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/** `git diff --name-only HEAD` — staged + unstaged tracked changes vs HEAD.
+ * Untracked files are deliberately excluded (they'd need `git ls-files
+ * --others`); newly-created TS files won't have imports to organise anyway.
+ * Errors are precise so the agent knows whether to install git, move to a
+ * repo, or just pass explicit paths. */
+function gitChangedFiles(cwd: string): string[] {
+  if (!findGitRoot(cwd)) {
+    throw new Error(
+      `--changed: no .git found at or above ${cwd}. Pass explicit file paths instead.`,
+    );
+  }
+  const r = spawnSync("git", ["diff", "--name-only", "HEAD"], { cwd, encoding: "utf8" });
+  if (r.error && (r.error as NodeJS.ErrnoException).code === "ENOENT") {
+    throw new Error(
+      "--changed: `git` not found in PATH. Install git, or pass explicit file paths instead.",
+    );
+  }
+  if (r.status !== 0) {
+    const stderr = (r.stderr ?? "").trim();
+    throw new Error(`--changed: git diff failed${stderr ? ` — ${stderr}` : ""}`);
+  }
+  return r.stdout
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => resolve(cwd, s));
+}
+
+const tidyOrganiseImports = defineTool({
+  name: "tidy organise-imports",
+  description:
+    "Organise imports across files: sort, dedupe, drop unused. Run after an edit batch — one call, no per-file token loop.",
+  positional: ["files"],
+  inputSchema: {
+    files: s.arr(s.str({}), {
+      optional: true,
+      description: "Literal paths, directories (recursive walk), or globs. Combine with --changed.",
+    }),
+    changed: s.bool({
+      optional: true,
+      description:
+        "Add tracked files reported by `git diff --name-only HEAD` (staged + unstaged vs HEAD).",
+    }),
+  },
+  handler: async ({ files, changed }, ctx) => {
+    const inputs: string[] = [...(files ?? [])];
+    if (changed) {
+      try {
+        inputs.push(...gitChangedFiles(ctx.cwd));
+      } catch (e) {
+        return fail(String((e as Error).message ?? e));
+      }
+    }
+    if (!inputs.length) {
+      return fail("tidy organise-imports needs file paths or --changed");
+    }
+    const expanded = await expandFileArgs(inputs, ctx.cwd);
+    const paths = expanded.filter((p) => TS_LIKE_EXT_RE.test(p));
+    if (!paths.length) return okEmpty("no TS/JS files to organise");
+    return fanout(
+      paths,
+      (p) => relative(ctx.cwd, p) || p,
+      async (p) => {
+        try {
+          const { client, root } = await ctx.pool.forFile(p);
+          const summary = await runOrganizeImports(client, p, root);
+          if (!summary || summary.total_edits === 0) return okEmpty("clean");
+          const n = summary.total_edits;
+          return ok(`organised (${n} edit${n === 1 ? "" : "s"})`);
+        } catch (e) {
+          return fail(String((e as Error).message ?? e));
+        }
+      },
+    );
+  },
+});
+
 // `ToolDef<any>` is intentional: each tool's handler is contravariant in its
 // input shape, so a `ToolDef<{ query: StrSchema }>` is not assignable to
 // `ToolDef<Shape>`. The `defineTool` helper still gives each individual
@@ -967,6 +1097,7 @@ export const TOOLS: ToolDef<any>[] = [
   diagnostics,
   callHierarchy,
   codeAction,
+  tidyOrganiseImports,
 ];
 
 export function getTool(name: string): ToolDef | undefined {
