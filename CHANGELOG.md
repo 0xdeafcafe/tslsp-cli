@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.5.0...v0.6.0) (2026-06-08)
+
+
+### Features
+
+* rename marketplace to 0xdeafcafe-tslsp to avoid name collisions ([#26](https://github.com/0xdeafcafe/tslsp-cli/issues/26)) ([ca95d52](https://github.com/0xdeafcafe/tslsp-cli/commit/ca95d52fc6848e8150df9cf249c9ad900ff08280))
+
 ## [0.5.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.4.0...v0.5.0) (2026-06-08)
 
 
