@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.6.0...v0.7.0) (2026-06-09)
+
+
+### Features
+
+* **evals:** CI-level skill regression evals via LangWatch ([#32](https://github.com/0xdeafcafe/tslsp-cli/issues/32)) ([77a72e0](https://github.com/0xdeafcafe/tslsp-cli/commit/77a72e0fa7f8bead11d8940740da8f3c55de531b))
+* tidy organise-imports for post-edit batches ([#28](https://github.com/0xdeafcafe/tslsp-cli/issues/28)) ([7263c46](https://github.com/0xdeafcafe/tslsp-cli/commit/7263c466c509784a515252ad920d3b517782582e))
+
+
+### Bug Fixes
+
+* **rename:** prepareRename precheck before destructive request ([#31](https://github.com/0xdeafcafe/tslsp-cli/issues/31)) ([6201733](https://github.com/0xdeafcafe/tslsp-cli/commit/62017332c3c6eea334c61bf262330ecc6e180e88))
+
 ## [0.6.0](https://github.com/0xdeafcafe/tslsp-cli/compare/v0.5.0...v0.6.0) (2026-06-08)
 
 
