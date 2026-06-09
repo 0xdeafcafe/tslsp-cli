@@ -1,6 +1,6 @@
 # Skill regression evals
 
-`pnpm run evals` runs every prompt in `skills/tslsp/evals/evals.json` against the current `skills/tslsp/SKILL.md`, scores each response, and logs the run to LangWatch as an experiment. The dashboard then shows two things: per-commit regression (this commit vs prior commits) and per-commit lift (skill-on vs skill-off).
+`pnpm run evals` runs every prompt in `evals/evals.json` against the current `skills/tslsp/SKILL.md`, scores each response, and logs the run to LangWatch as an experiment. The dashboard then shows two things: per-commit regression (this commit vs prior commits) and per-commit lift (skill-on vs skill-off).
 
 ## How a single run works
 
@@ -41,7 +41,7 @@ Opt-in by design: not every PR touches the skill, so we don't burn API tokens by
 
 ## Adding a new eval
 
-Edit `skills/tslsp/evals/evals.json`. Each entry needs:
+Edit `evals/evals.json`. Each entry needs:
 
 - `id` - unique integer.
 - `eval_name` - kebab-case, short. Becomes part of the scorer keys in LangWatch.

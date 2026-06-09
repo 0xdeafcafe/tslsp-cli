@@ -90,29 +90,74 @@ jobs:
           GITHUB_SHA: ${{ steps.ref.outputs.sha }}
           # PR number is only available for issue_comment; left unset for dispatch.
           GITHUB_PR_NUMBER: ${{ github.event.issue.number }}
+          EVALS_SUMMARY_PATH: ${{ github.workspace }}/evals-summary.json
         run: |
           set -o pipefail
           pnpm run evals 2>&1 | tee /tmp/evals.log
 
-      - name: comment on PR
+      - name: upsert PR comment
         if: always() && github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          SHA: ${{ steps.ref.outputs.sha }}
+          RUN_OUTCOME: ${{ steps.run.outcome }}
+          SUMMARY_PATH: ${{ github.workspace }}/evals-summary.json
+          # Stable HTML-comment marker; lets us find the previous comment on
+          # re-runs and PATCH it in place instead of stacking up.
+          MARKER: "<!-- skill-evals-marker -->"
         run: |
+          # Render the comment body. Three sections: header + link, summary
+          # table (when the run produced a summary), and the truncated log.
           {
-            echo "## Skill evals · \`${{ steps.ref.outputs.sha }}\`"
+            echo "$MARKER"
+            echo "## Skill evals · \`$SHA\`"
             echo ""
-            if [ "${{ steps.run.outcome }}" = "success" ]; then
-              echo "Run completed. Inspect this commit vs main in [LangWatch](https://app.langwatch.ai)."
+            if [ "$RUN_OUTCOME" = "success" ] && [ -f "$SUMMARY_PATH" ]; then
+              SLUG=$(jq -r .experiment_slug "$SUMMARY_PATH")
+              RUN_ID=$(jq -r .run_id "$SUMMARY_PATH")
+              PASSES=$(jq -r .totals.passes "$SUMMARY_PATH")
+              FAILS=$(jq -r .totals.fails "$SUMMARY_PATH")
+              SCORERS=$(jq -r .totals.scorers "$SUMMARY_PATH")
+              echo "**${PASSES} / ${SCORERS}** scorers passed. [Open run in LangWatch](https://app.langwatch.ai/experiments/${SLUG}?runId=${RUN_ID})"
+              echo ""
+              echo "| target | pass | fail | rate | avg latency | total tokens |"
+              echo "|---|---:|---:|---:|---:|---:|"
+              jq -r '
+                .targets
+                | to_entries
+                | sort_by(.key)
+                | .[]
+                | "| `\(.key)` | \(.value.passes) | \(.value.fails) | \((.value.pass_rate * 100 | floor))% | \(.value.agent_avg_duration_ms) ms | \(.value.agent_total_tokens) |"
+              ' "$SUMMARY_PATH"
+            elif [ "$RUN_OUTCOME" = "success" ]; then
+              echo "Run completed but summary file missing - see workflow logs."
             else
               echo "Run failed - see workflow logs for details."
             fi
             echo ""
-            echo "<details><summary>Output</summary>"
+            echo "<details><summary>Full log</summary>"
             echo ""
             echo '```'
             tail -120 /tmp/evals.log || echo "(no output captured)"
             echo '```'
             echo ""
             echo "</details>"
-          } | gh pr comment "${{ github.event.issue.number }}" --body-file -
+            echo ""
+            echo "_updated $(date -u +'%Y-%m-%d %H:%M UTC')_"
+          } > /tmp/comment-body.md
+
+          # Find the existing comment with our marker. List up to 100 (a PR
+          # typically has far fewer); paginate if you ever hit that ceiling.
+          EXISTING_ID=$(gh api "/repos/$REPO/issues/$PR/comments?per_page=100" \
+            --jq "[.[] | select(.body | contains(\"$MARKER\"))] | .[0].id // empty")
+
+          if [ -n "$EXISTING_ID" ]; then
+            echo "patching existing comment $EXISTING_ID"
+            gh api -X PATCH "/repos/$REPO/issues/comments/$EXISTING_ID" \
+              -F body=@/tmp/comment-body.md > /dev/null
+          else
+            echo "creating new comment"
+            gh pr comment "$PR" --body-file /tmp/comment-body.md > /dev/null
+          fi

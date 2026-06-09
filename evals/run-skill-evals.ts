@@ -10,6 +10,12 @@
  * through `gateway.langwatch.ai` becomes a trace in the LangWatch
  * project automatically. No client-side OTel instrumentation here.
  *
+ * Side effects:
+ *  - stdout: human-readable per-scorer pass/fail summary.
+ *  - LangWatch experiment: one row per (eval × model × variant × scorer).
+ *  - $EVALS_SUMMARY_PATH (default /tmp/evals-summary.json): structured
+ *    summary the workflow turns into a PR-comment preview.
+ *
  * Env:
  *   LANGWATCH_API_KEY           SDK auth for `experiments.init`.
  *   LANGWATCH_PROJECT_ID        Required when the API key is a
@@ -18,6 +24,7 @@
  *                               AI Gateway → Virtual Keys. Used for
  *                               every model call (agent + judge).
  *   GITHUB_SHA, GITHUB_PR_NUMBER  Optional metadata to tag the run.
+ *   EVALS_SUMMARY_PATH          Override the summary JSON path.
  *
  * Run locally:
  *   pnpm run evals
@@ -25,13 +32,14 @@
  * Always exits 0 (informational, not a CI gate).
  * Inspect trends in https://app.langwatch.ai → Experiments.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { LangWatch } from "langwatch";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SKILL_MD_PATH = resolve(ROOT, "skills/tslsp/SKILL.md");
-const EVALS_PATH = resolve(ROOT, "skills/tslsp/evals/evals.json");
+const EVALS_PATH = resolve(ROOT, "evals/evals.json");
+const SUMMARY_PATH = process.env.EVALS_SUMMARY_PATH ?? "/tmp/evals-summary.json";
 
 const GATEWAY_URL = "https://gateway.langwatch.ai/v1/chat/completions";
 const MODELS = ["anthropic/claude-opus-4-7", "anthropic/claude-sonnet-4-6"];
@@ -74,8 +82,19 @@ if (!process.env.LANGWATCH_API_KEY) {
   process.exit(2);
 }
 
+interface ChatUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
 interface ChatResponse {
   choices: { message: { content: string } }[];
+  usage?: ChatUsage;
+}
+interface ChatResult {
+  content: string;
+  usage: ChatUsage;
+  durationMs: number;
 }
 
 class GatewayError extends Error {
@@ -90,7 +109,7 @@ class GatewayError extends Error {
 }
 
 /** Sleep with jittered backoff. */
-function backoff(attempt: number): Promise<void> {
+function sleep(attempt: number): Promise<void> {
   const baseMs = 500 * 2 ** attempt;
   const jitterMs = Math.floor(Math.random() * 250);
   return new Promise((r) => setTimeout(r, baseMs + jitterMs));
@@ -98,13 +117,17 @@ function backoff(attempt: number): Promise<void> {
 
 /** One call into the gateway. The agent cap is generous enough to fit a
  * multi-paragraph response with a command at the end; judge calls override
- * to a much smaller cap since they answer PASS/FAIL on one line. */
+ * to a much smaller cap since they answer PASS/FAIL on one line.
+ *
+ * Returns content + usage + wall-clock duration so callers can aggregate
+ * cost/latency per target. The gateway always returns `usage` for
+ * supported providers; we treat it as optional anyway for safety. */
 async function chat(
   model: string,
   system: string,
   user: string,
   maxTokens = 2048,
-): Promise<string> {
+): Promise<ChatResult> {
   // An empty system prompt means "no skill" - the baseline variant. Drop
   // the role entirely so the model isn't biased by a default the gateway
   // might inject for an empty system message.
@@ -117,11 +140,9 @@ async function chat(
       : [{ role: "user", content: user }];
   const body = JSON.stringify({ model, messages, max_tokens: maxTokens });
 
-  // Retry transient failures: network errors and 5xx from the gateway.
-  // 4xx is the caller's fault (auth, model name, oversized request) and
-  // won't fix itself on retry, so let those throw immediately.
   const maxAttempts = 3;
   let lastErr: unknown;
+  const startedAtMs = performance.now();
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const res = await fetch(GATEWAY_URL, {
@@ -135,21 +156,27 @@ async function chat(
       if (!res.ok) {
         const text = await res.text();
         const err = new GatewayError(`gateway ${res.status} for ${model}: ${text}`, res.status);
+        // Retry 5xx; 4xx is the caller's fault (auth, model name, oversized
+        // request) and won't fix itself on retry.
         if (res.status >= 500 && attempt < maxAttempts - 1) {
           lastErr = err;
-          await backoff(attempt);
+          await sleep(attempt);
           continue;
         }
         throw err;
       }
       const json = (await res.json()) as ChatResponse;
-      return json.choices[0]?.message?.content ?? "";
+      return {
+        content: json.choices[0]?.message?.content ?? "",
+        usage: json.usage ?? {},
+        durationMs: performance.now() - startedAtMs,
+      };
     } catch (e) {
       if (e instanceof GatewayError) throw e;
       // Network / DNS / abort - retry.
       lastErr = e;
       if (attempt < maxAttempts - 1) {
-        await backoff(attempt);
+        await sleep(attempt);
         continue;
       }
       throw e;
@@ -191,7 +218,7 @@ async function scoreLlmJudge(
     judgePrompt,
     200,
   );
-  const trimmed = verdict.trim();
+  const trimmed = verdict.content.trim();
   const passed = /^pass\b/i.test(trimmed);
   return { score: passed ? 1 : 0, details: trimmed.slice(0, 240) };
 }
@@ -233,6 +260,30 @@ const dataset: DatasetRow[] = evalsFile.evals.flatMap((ev, ei) =>
   ),
 );
 
+// Per-target aggregates: cost dimension matters as much as correctness.
+interface TargetAgg {
+  passes: number;
+  fails: number;
+  agent_calls: number;
+  agent_total_tokens: number;
+  agent_duration_ms_total: number;
+}
+const aggByTarget = new Map<string, TargetAgg>();
+function aggFor(target: string): TargetAgg {
+  let a = aggByTarget.get(target);
+  if (!a) {
+    a = {
+      passes: 0,
+      fails: 0,
+      agent_calls: 0,
+      agent_total_tokens: 0,
+      agent_duration_ms_total: 0,
+    };
+    aggByTarget.set(target, a);
+  }
+  return a;
+}
+
 let passes = 0;
 let fails = 0;
 const lines: string[] = [];
@@ -242,10 +293,14 @@ await experiment.run(dataset, async ({ item, index }) => {
   const modelShort = model.split("/").pop() ?? model;
   const targetName = `${modelShort}-${variant.suffix}`;
   const targetMetadata = { model, skill: variant.suffix === "with-skill" };
+  const agg = aggFor(targetName);
 
-  let response: string;
+  let agent: ChatResult;
   try {
-    response = await chat(model, variant.system, ev.prompt);
+    agent = await chat(model, variant.system, ev.prompt);
+    agg.agent_calls++;
+    agg.agent_total_tokens += agent.usage.total_tokens ?? 0;
+    agg.agent_duration_ms_total += agent.durationMs;
   } catch (e) {
     const msg = String((e as Error).message ?? e);
     lines.push(`  ${ev.eval_name} [${targetName}]  agent call FAILED: ${msg}`);
@@ -264,8 +319,8 @@ await experiment.run(dataset, async ({ item, index }) => {
     try {
       result =
         scorer.type === "regex"
-          ? scoreRegex(response, scorer)
-          : await scoreLlmJudge(response, scorer, ev.prompt);
+          ? scoreRegex(agent.content, scorer)
+          : await scoreLlmJudge(agent.content, scorer, ev.prompt);
     } catch (e) {
       const msg = String((e as Error).message ?? e);
       lines.push(`  ${ev.eval_name}.${scorer.name} [${targetName}]  scorer error: ${msg}`);
@@ -278,8 +333,13 @@ await experiment.run(dataset, async ({ item, index }) => {
       });
       continue;
     }
-    if (result.score) passes++;
-    else fails++;
+    if (result.score) {
+      passes++;
+      agg.passes++;
+    } else {
+      fails++;
+      agg.fails++;
+    }
     const flag = result.score ? "PASS" : "FAIL";
     lines.push(`  ${flag}  ${ev.eval_name}.${scorer.name} [${targetName}]  ${result.details}`);
     experiment.log(`${ev.eval_name}.${scorer.name}`, {
@@ -289,6 +349,14 @@ await experiment.run(dataset, async ({ item, index }) => {
       details: result.details,
       target: targetName,
       metadata: targetMetadata,
+      // Attach the agent call's duration + token spend to each scorer
+      // row so LangWatch can chart cost-by-target alongside pass/fail.
+      duration: agent.durationMs,
+      data: {
+        prompt_tokens: agent.usage.prompt_tokens,
+        completion_tokens: agent.usage.completion_tokens,
+        total_tokens: agent.usage.total_tokens,
+      },
     });
   }
 });
@@ -300,5 +368,31 @@ lines.sort();
 for (const l of lines) console.log(l);
 console.log("");
 console.log(`Dashboard: https://app.langwatch.ai`);
+
+// Structured summary for the workflow's PR-comment renderer.
+const summary = {
+  experiment_name: experimentName,
+  experiment_slug: experiment.experimentSlug,
+  run_id: experiment.runId,
+  sha,
+  pr_number: pr || null,
+  totals: { scorers: passes + fails, passes, fails },
+  targets: Object.fromEntries(
+    [...aggByTarget].map(([name, a]) => [
+      name,
+      {
+        passes: a.passes,
+        fails: a.fails,
+        pass_rate: a.passes + a.fails > 0 ? a.passes / (a.passes + a.fails) : 0,
+        agent_calls: a.agent_calls,
+        agent_total_tokens: a.agent_total_tokens,
+        agent_avg_duration_ms:
+          a.agent_calls > 0 ? Math.round(a.agent_duration_ms_total / a.agent_calls) : 0,
+      },
+    ]),
+  ),
+};
+await writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2));
+console.log(`Summary written to ${SUMMARY_PATH}`);
 
 process.exit(0);
