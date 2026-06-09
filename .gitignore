@@ -11,10 +11,15 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+.env
 
 # probe sandbox state - generated locally
 probe/node_modules/
 probe/package-lock.json
 
-# local agent state — Claude Code worktrees, skill-iteration workspaces, etc.
+# local agent state - Claude Code worktrees, skill-iteration workspaces, etc.
 .claude/
+
+# langwatch skill install artefacts (sibling skill consumed during dev, not part of this repo)
+.agents/
+skills-lock.json

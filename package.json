@@ -41,14 +41,17 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
+    "evals": "node --experimental-strip-types --no-warnings=ExperimentalWarning evals/run-skill-evals.ts",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@typescript/native-preview": "7.0.0-dev.20260506.1"
   },
   "devDependencies": {
+    "@opentelemetry/sdk-node": "^0.218.0",
     "@types/node": "^22.19.17",
     "@vitest/ui": "^4.1.8",
+    "langwatch": "^0.32.0",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",
     "typescript": "^6.0.3",
@@ -57,5 +60,10 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.29.3"
+  "packageManager": "pnpm@10.29.3",
+  "pnpm": {
+    "overrides": {
+      "protobufjs": ">=8.0.2"
+    }
+  }
 }
