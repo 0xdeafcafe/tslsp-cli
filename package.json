@@ -48,14 +48,14 @@
     "@typescript/native-preview": "7.0.0-dev.20260506.1"
   },
   "devDependencies": {
-    "@opentelemetry/sdk-node": "^0.218.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
     "@types/node": "^22.19.17",
-    "@vitest/ui": "^4.1.8",
-    "langwatch": "^0.32.0",
-    "oxfmt": "^0.53.0",
-    "oxlint": "^1.68.0",
+    "@vitest/ui": "^4.1.9",
+    "langwatch": "^0.33.1",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   },
   "engines": {
     "node": ">=22"
