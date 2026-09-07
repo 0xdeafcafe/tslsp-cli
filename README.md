@@ -103,6 +103,40 @@ Glob and directory inputs are filtered through a source-extension set (`.ts/.tsx
 
 Batched output is squeezed: clean items drop their `=== file ===` headers, all-clean batches collapse to one line, and `references --summary` swaps snippets for `path (N): l1, l2, l3` — ~15KB → a few hundred bytes on heavily-referenced symbols.
 
+## which typescript
+
+the LSP has to be the _same compiler your project type-checks with_. a bundled
+compiler that's three months ahead of (or behind) your `tsc` will disagree with
+it on real code, and you'll trust the wrong one. so tslsp-cli resolves the
+binary from the workspace it's serving, walking up from the `tsconfig.json`
+root — never from `process.cwd()`, never from `PATH`:
+
+| order | where                                                       | binary                                       |
+| ----- | ----------------------------------------------------------- | -------------------------------------------- |
+| 1     | the project's own `typescript` (7.x — nearest node_modules) | `@typescript/typescript-<plat>/lib/tsc`      |
+| 2     | the project's `@typescript/native-preview`                  | `@typescript/native-preview-<plat>/lib/tsgo` |
+| 3     | tslsp-cli's own bundled `@typescript/native-preview`        | same, from tslsp-cli's install               |
+
+TypeScript 7 ships the native binary — it _is_ tsgo, published under the
+`typescript` name, and `node_modules/.bin/tsc` points at it. tslsp-cli resolves
+that exact file (skipping the node shim, so there's no extra process per spawn).
+`typescript` below 7 is the JavaScript compiler with no LSP, so it's skipped.
+nearest `node_modules` wins, which is what you want in a monorepo: a package
+that pins its own compiler gets it, everything else gets the root's.
+
+every run prints one line to stderr naming what it picked:
+
+```
+tslsp-cli: using typescript 7.0.2 (workspace typescript) at /repo/node_modules/@typescript/typescript-darwin-arm64/lib/tsc
+```
+
+**install story.** `tslsp-cli` installs globally, so it can't rely on a peer
+dependency being there — `typescript` is declared as an _optional_ peer (per-project
+installs pick your version up automatically and npm won't nag) and
+`@typescript/native-preview` stays a real dependency, the fallback for a global
+install, a project on TypeScript 6, or a folder with no `node_modules` at all.
+that fallback is pinned to a dev build; bump it deliberately.
+
 ## daemon
 
 ```
@@ -124,11 +158,11 @@ The daemon self-exits after 30 min idle (`TSLSP_DAEMON_IDLE_MS`); individual tsg
 
 ## gotchas
 
-- `@typescript/native-preview` is pinned to a specific dev build. tsgo moves fast; bump it deliberately.
-- `rename` and `rename-file` write to disk. `--dry-run` previews first.
-- Always quote glob patterns. An unquoted `src/**/*.ts` that matches nothing in your shell becomes a literal argument and the LSP errors instead of the expander finding zero files.
+- Answers with **your project's** TypeScript, not its own. See [which typescript](#which-typescript) — if the version in the startup line isn't the one you expect, that's why the LSP and your `tsc` disagree.
+- `rename` and `rename-file` write to disk. `--dry-run` previews first; `git diff` is your friend either way.
+- Always quote glob patterns (`'src/**/*.ts'`). Unquoted globs that match nothing in your shell become literal arguments and the LSP errors instead of the expander finding zero files.
 - One tsgo per `tsconfig.json` root. Monorepos pay project-load cost the first time each project is hit (~50ms small, more on large).
 - `--daemon` keeps files open across calls. External edits between two daemon-routed calls may briefly lag until the next file-open or `didChangeWatchedFiles` event.
 - Daemon stderr lives at `$CACHE/tslsp/daemon/<hash>/<session>.err` — first place to look if a spawn fails.
-- `TSLSP_VERBOSE=1` forwards tsgo's stderr to the foreground process.
-- A homebrew-installed `tsgo` on `PATH` is ignored; `tslsp-cli` always uses the npm-pinned one.
+- `TSLSP_VERBOSE=1` forwards tsgo's stderr.
+- A `tsgo` installed on your `PATH` is ignored. PATH is never consulted.
