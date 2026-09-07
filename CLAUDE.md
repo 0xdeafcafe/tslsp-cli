@@ -18,7 +18,9 @@ node dist/cli.js <cmd>  # invoke the built CLI locally
 
 `tests/cli-e2e.test.ts` spawns the built CLI via `node dist/cli.js`, so it runs `pnpm run build` automatically when `dist/cli.js` is missing — but a stale build silently runs the old behavior. **Rebuild before iterating on the e2e suite.**
 
-The package manager is `pnpm@10.29.3` (pinned in `packageManager`). The only runtime dep is `@typescript/native-preview` (tsgo); validation is hand-rolled in `src/schema.ts`. Pinned to a dev build — bump deliberately.
+The package manager is `pnpm@10.29.3` (pinned in `packageManager`). Validation is hand-rolled in `src/schema.ts`.
+
+**Which TypeScript the LSP runs** is decided by `src/ts-binary.ts`, not by our dependencies: it walks up from the tsconfig root and takes the workspace's `typescript` (7.x, whose `tsc` _is_ the native binary), else the workspace's `@typescript/native-preview`, else the bundled one. `typescript` is an optional peer dependency; `@typescript/native-preview` stays a real dependency as the last-resort fallback for global installs, and is pinned to a dev build — bump deliberately. `workspace.ts` prints one stderr line per distinct binary naming the pick and its version.
 
 ## Architecture
 
