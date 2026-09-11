@@ -18,10 +18,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # tsgo dev builds shift daily. We pin it deliberately and bump by hand;
-    # don't let Dependabot churn on it.
-    ignore:
-      - dependency-name: "@typescript/native-preview"
 
   - package-ecosystem: "github-actions"
     directory: "/"

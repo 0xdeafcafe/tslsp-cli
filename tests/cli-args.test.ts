@@ -25,7 +25,7 @@ describe("type predicates", () => {
 
 describe("arrayInner", () => {
   it("returns the element schema for an array", () => {
-    expect(arrayInner(s.arr(s.str({})))).toMatchObject({ kind: "string" });
+    expect(arrayInner(s.arr(s.str({}), {}))).toMatchObject({ kind: "string" });
   });
   it("returns the element schema for an optional array", () => {
     expect(arrayInner(s.arr(s.num({}), { optional: true }))).toMatchObject({ kind: "number" });
@@ -34,7 +34,7 @@ describe("arrayInner", () => {
 
 describe("enumValues", () => {
   it("extracts the value list", () => {
-    expect(enumValues(s.pick(["a", "b", "c"])).sort()).toEqual(["a", "b", "c"]);
+    expect(enumValues(s.pick(["a", "b", "c"], {})).sort()).toEqual(["a", "b", "c"]);
   });
   it("works on an optional enum", () => {
     expect(enumValues(s.pick(["x", "y"], { optional: true })).sort()).toEqual(["x", "y"]);
@@ -58,7 +58,7 @@ describe("coerce", () => {
     expect(coerce(s.bool({}), "false")).toBe(false);
   });
   it("validates enums", () => {
-    const e = s.pick(["a", "b"]);
+    const e = s.pick(["a", "b"], {});
     expect(coerce(e, "a")).toBe("a");
     expect(() => coerce(e, "z")).toThrow(/expected one of/);
   });
@@ -69,7 +69,7 @@ describe("coerce", () => {
 
 describe("typeHint", () => {
   it("renders enum values", () => {
-    expect(typeHint(s.pick(["a", "b", "c"]))).toBe("a|b|c");
+    expect(typeHint(s.pick(["a", "b", "c"], {}))).toBe("a|b|c");
   });
   it("renders number", () => {
     expect(typeHint(s.num({}))).toBe("number");

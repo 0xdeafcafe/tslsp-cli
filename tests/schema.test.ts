@@ -42,7 +42,7 @@ describe("validate (single field)", () => {
   });
 
   it("array validates each element and aggregates per-element errors", () => {
-    const r = validate(s.arr(s.str({ min: 1 })), ["a", "", "b", ""]);
+    const r = validate(s.arr(s.str({ min: 1 }), {}), ["a", "", "b", ""]);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       // Two empty strings at indices 1 and 3 — both should appear.
@@ -56,8 +56,8 @@ describe("validate (single field)", () => {
   });
 
   it("enum rejects values outside the set", () => {
-    expect(validate(s.pick(["a", "b"]), "c").ok).toBe(false);
-    expect(validate(s.pick(["a", "b"]), "a").ok).toBe(true);
+    expect(validate(s.pick(["a", "b"], {}), "c").ok).toBe(false);
+    expect(validate(s.pick(["a", "b"], {}), "a").ok).toBe(true);
   });
 });
 

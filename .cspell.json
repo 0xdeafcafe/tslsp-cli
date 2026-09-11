@@ -21,9 +21,7 @@
     "oxlint",
     "reprojects",
     "tsgo",
-    "tsgos",
     "tslsp",
-    "TSGO",
     "TSLSP",
     "tsserver",
     "vitest"

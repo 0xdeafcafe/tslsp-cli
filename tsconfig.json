@@ -1,19 +1,19 @@
 {
   "compilerOptions": {
-    "target": "es2022",
+    "target": "es2023",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "types": ["node"],
-    "declaration": false,
-    "sourceMap": true,
-    "resolveJsonModule": true
+    "noEmit": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "probe", "tests", "vitest.config.ts"]
+  "include": ["src/**/*", "tests/**/*", "vitest.config.ts"]
 }

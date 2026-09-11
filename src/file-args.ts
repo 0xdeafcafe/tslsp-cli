@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
 
 /** Source file extensions we'll auto-walk when a directory is given. Matches
- * tsgo's source scope and keeps us from accidentally typechecking generated
+ * the server's source scope and keeps us from accidentally typechecking generated
  * `.d.ts` from node_modules. */
 const SOURCE_EXTS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 

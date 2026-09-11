@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  CallHierarchyIncomingCall,
-  CallHierarchyItem,
-  CallHierarchyOutgoingCall,
-  CodeAction,
-  Diagnostic,
-  DocumentSymbol,
-  Hover,
-  Location,
+  type CallHierarchyIncomingCall,
+  type CallHierarchyItem,
+  type CallHierarchyOutgoingCall,
+  type CodeAction,
+  type Diagnostic,
+  type DocumentSymbol,
+  type Hover,
+  type Location,
 } from "./lsp-client.js";
 
 const SNIPPET_MAX = 120;
@@ -96,7 +96,7 @@ export function formatHover(hover: Hover | null): string {
   return trimHover(text);
 }
 
-/** Strip the noisy bits from tsgo's hover markdown — code fences fine, but drop "Loading..."-style fluff. */
+/** Strip the noisy bits from the server's hover markdown — code fences fine, but drop "Loading..."-style fluff. */
 function trimHover(s: string): string {
   return s
     .replace(/```typescript\n/g, "```ts\n")
@@ -193,7 +193,7 @@ export function formatOutline(symbols: DocumentSymbol[], opts: FormatOutlineOpts
  * dwarf this fixed cost on any non-trivial file. */
 export const OUTLINE_PREAMBLE = "# format: <line>: <kind> <name>  (line is 1-based)";
 
-/** Cap a hover blob at `max` characters. tsgo hover for framework symbols can
+/** Cap a hover blob at `max` characters. Server hover for framework symbols can
  * dump 1-2KB of JSDoc + examples; agents almost always want the signature, not
  * the full doc. The slice closes any open code fence so the trailing markdown
  * doesn't render as a half-open block. */

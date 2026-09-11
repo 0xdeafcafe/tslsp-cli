@@ -122,20 +122,20 @@ export class LspClient {
   private closed = false;
   private log: (line: string) => void;
   private serverCaps: ServerCapabilities = {};
+  private opts: LspClientOptions;
 
-  constructor(private opts: LspClientOptions) {
+  constructor(opts: LspClientOptions) {
+    this.opts = opts;
     this.log = opts.log ?? (() => {});
     this.proc = spawn(opts.binPath, ["--lsp", "--stdio"], {
       cwd: opts.rootPath,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    this.proc.stderr?.on("data", (d: Buffer) =>
-      this.log(`[tsgo stderr] ${d.toString().trimEnd()}`),
-    );
+    this.proc.stderr?.on("data", (d: Buffer) => this.log(`[lsp stderr] ${d.toString().trimEnd()}`));
     this.proc.stdout?.on("data", (chunk: Buffer) => this.onStdout(chunk));
     this.proc.on("exit", (code) => {
       this.closed = true;
-      const err = new Error(`tsgo exited (code=${code})`);
+      const err = new Error(`TypeScript language server exited (code=${code})`);
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
         p.reject(err);
@@ -277,7 +277,7 @@ export class LspClient {
     if (method === "textDocument/publishDiagnostics" && params?.uri) {
       this.diagnostics.set(params.uri, params.diagnostics ?? []);
     } else if (method === "window/logMessage" || method === "window/showMessage") {
-      this.log(`[tsgo ${method}] ${params?.message ?? ""}`);
+      this.log(`[lsp ${method}] ${params?.message ?? ""}`);
     }
   }
 
@@ -325,7 +325,7 @@ export class LspClient {
    * content for each file, then workspace/didChangeWatchedFiles. All sends
    * happen back-to-back without yielding (read every file's content first),
    * because yielding between close/open pairs lets server-initiated requests
-   * interleave and seems to confuse tsgo's index refresh.
+   * interleave and seems to confuse the server's index refresh.
    */
   async filesChangedOnDisk(filePaths: string[]): Promise<void> {
     // Read all file content + stats up-front so the send loop doesn't yield.
@@ -349,7 +349,7 @@ export class LspClient {
     this.notify("workspace/didChangeWatchedFiles", {
       changes: items.map((it) => ({ uri: it.uri, type: 2 /* Changed */ })),
     });
-    // Brief settle for tsgo to reproject its workspace symbol index.
+    // Brief settle for the server to reproject its workspace symbol index.
     await new Promise((r) => setTimeout(r, 300));
   }
 
@@ -366,8 +366,8 @@ export class LspClient {
   }
 
   /**
-   * tsgo's workspace/symbol only sees files that have been didOpen'd. Open one
-   * .ts file in the project so tsgo loads the program and indexes everything
+   * The server's workspace/symbol only sees files that have been didOpen'd. Open one
+   * .ts file in the project so the server loads the program and indexes everything
    * reachable from it. Idempotent.
    */
   async ensureProjectSeeded(): Promise<void> {

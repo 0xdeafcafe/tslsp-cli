@@ -1,12 +1,12 @@
 ---
 name: tslsp
-description: REQUIRED for any TypeScript/JavaScript symbol work in a project with tsconfig.json. Use INSTEAD OF Grep/Edit/MultiEdit/mv/git mv/tsc when the target is an identifier in .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs. Type-aware via tsgo. Triggers — finding usages, jumping to a definition, renaming a symbol, moving or renaming a file (with import rewrites), reading type signatures or JSDoc, outlining a file, checking type errors, organizing imports, finding implementations of an interface, tracing callers or callees, applying a quick-fix.
+description: REQUIRED for any TypeScript/JavaScript symbol work in a project with tsconfig.json. Use INSTEAD OF Grep/Edit/MultiEdit/mv/git mv/tsc when the target is an identifier in .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs. Type-aware via the TypeScript compiler's own language server. Triggers — finding usages, jumping to a definition, renaming a symbol, moving or renaming a file (with import rewrites), reading type signatures or JSDoc, outlining a file, checking type errors, organizing imports, finding implementations of an interface, tracing callers or callees, applying a quick-fix.
 allowed-tools: Bash(npx:*)
 ---
 
 # tslsp-cli — your only TypeScript navigation/refactor tool
 
-If there's a `tsconfig.json` in the tree and the thing you're touching is an identifier in TS/JS, you use `tslsp-cli`. Not `Grep`, not `Edit`, not `mv`. tsgo (Microsoft's native TypeScript LSP) actually understands the program; text tools see characters.
+If there's a `tsconfig.json` in the tree and the thing you're touching is an identifier in TS/JS, you use `tslsp-cli`. Not `Grep`, not `Edit`, not `mv`. The TypeScript compiler actually understands the program; text tools see characters.
 
 This is not "a faster grep." It's the difference between a refactor that compiles and a refactor that bricks production.
 
@@ -185,11 +185,11 @@ Sorts external before relative, merges duplicate imports, drops the unused ones.
 
 `--changed` needs `git` in PATH and a `.git` somewhere above the cwd; if neither holds, it fails loudly so you know to pass paths explicitly.
 
-**One nuance worth knowing:** `tidy organise-imports` is conservative about removal — it only drops imports the TS program considers unused. If you hand-edit imports yourself instead of running this, you risk dropping bindings that are technically referenced (e.g. by a `const _unused = readFileSync;` alias, or by an unused-looking `import "side-effect.js"`). Let tsgo make the call.
+**One nuance worth knowing:** `tidy organise-imports` is conservative about removal — it only drops imports the TS program considers unused. If you hand-edit imports yourself instead of running this, you risk dropping bindings that are technically referenced (e.g. by a `const _unused = readFileSync;` alias, or by an unused-looking `import "side-effect.js"`). Let the compiler make the call.
 
 ## Speed: `--daemon` for tight refactor loops
 
-Default mode spawns a fresh tsgo per call (~200ms–2s). For a refactor with many calls in a row, add `--daemon` — calls route through a warm per-workspace daemon (autospawned on first call, idle-reaps after 30 min).
+Default mode spawns a fresh language server per call (~200ms–2s). For a refactor with many calls in a row, add `--daemon` — calls route through a warm per-workspace daemon (autospawned on first call, idle-reaps after 30 min).
 
 ```bash
 tslsp-cli --daemon references --symbol User

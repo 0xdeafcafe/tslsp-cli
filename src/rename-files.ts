@@ -2,7 +2,7 @@ import { mkdir, readdir, rename as fsRename, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { uriToRel } from "./format.js";
-import { FileRename, LspClient, WorkspaceEdit } from "./lsp-client.js";
+import { type FileRename, LspClient, type WorkspaceEdit } from "./lsp-client.js";
 import { applyWorkspaceEdit } from "./rename.js";
 
 export interface FileRenameSummary {
@@ -69,7 +69,7 @@ export async function expandRenames(oldPath: string, newPath: string): Promise<F
 }
 
 /** Ask the server what import edits are needed for these renames. Server
- * returns a WorkspaceEdit; some servers (older tsgo builds) return null when
+ * returns a WorkspaceEdit; some servers (older TypeScript builds) return null when
  * the capability isn't enabled — caller decides what to do. */
 export async function getWillRenameEdit(
   client: LspClient,
@@ -142,7 +142,7 @@ export async function performFileRename(
 
   // CRITICAL: apply the WorkspaceEdit BEFORE moving files. The edit's URIs
   // refer to the pre-rename state; for a moved file with internal relative
-  // imports tsgo emits edits keyed by the OLD URI. Reading that URI after a
+  // imports the server emits edits keyed by the OLD URI. Reading that URI after a
   // move would ENOENT, leaving the rename half-done. Applying first writes
   // the post-move content into the file at its current (old) path; the move
   // then carries the already-updated content to its destination.

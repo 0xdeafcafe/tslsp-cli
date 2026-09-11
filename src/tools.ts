@@ -18,19 +18,19 @@ import {
   uriToRel,
 } from "./format.js";
 import {
-  CallHierarchyIncomingCall,
-  CallHierarchyItem,
-  CallHierarchyOutgoingCall,
-  CodeAction,
-  Diagnostic,
-  DocumentSymbol,
-  Hover,
-  Location,
+  type CallHierarchyIncomingCall,
+  type CallHierarchyItem,
+  type CallHierarchyOutgoingCall,
+  type CodeAction,
+  type Diagnostic,
+  type DocumentSymbol,
+  type Hover,
+  type Location,
   LspClient,
-  SymbolInformation,
-  WorkspaceEdit,
+  type SymbolInformation,
+  type WorkspaceEdit,
 } from "./lsp-client.js";
-import { LocatorError, resolveLocator, SymbolLocator } from "./locator.js";
+import { LocatorError, resolveLocator, type SymbolLocator } from "./locator.js";
 import { performFileRename } from "./rename-files.js";
 import { applyWorkspaceEdit, summarizeRename } from "./rename.js";
 import { expandFileArgs } from "./file-args.js";
@@ -156,7 +156,7 @@ async function waitForDiagnostics(read: () => unknown, ms: number): Promise<void
 }
 
 /** Run a per-item handler in parallel and join the outputs under labeled
- * headers. The LSP processes requests on one connection but tsgo pipelines
+ * headers. The LSP processes requests on one connection but the server pipelines
  * them, so fan-out beats sequential round-trips.
  *
  * Output is squeezed for tokens: items whose per-item helper marked
@@ -293,7 +293,7 @@ const findSymbol = defineTool({
     }
     const filters: FindSymbolFilters = { file, limit, kinds, container };
     if (list.length === 1) return findSymbolOne(list[0]!, filters, ctx);
-    // Serialized, not fanout: tsgo's workspace/symbol races at cold-start when
+    // Serialized, not fanout: the server's workspace/symbol races at cold-start when
     // multiple queries land concurrently — later queries can come back empty
     // while the index is still being built. Serializing trades a little latency
     // for correctness, and the caller still saves the CLI round-trips.
@@ -515,7 +515,7 @@ const rename = defineTool({
     withLocator(ctx, loc as SymbolLocator, async ({ client, root, uri, position }) => {
       // Fast-fail when the position isn't a renamable identifier (keyword,
       // literal, whitespace, comment) before issuing the destructive request.
-      // We advertise `prepareSupport: true` in client capabilities, so tsgo
+      // We advertise `prepareSupport: true` in client capabilities, so the server
       // honours this. A `null` response means "not renamable here"; anything
       // else (Range, { range, placeholder }, or { defaultBehavior: true })
       // means proceed. We swallow request errors so a server that doesn't
@@ -927,7 +927,7 @@ const codeAction = defineTool({
         const target = actions[apply];
         if (!target) return fail(`no action at index ${apply} (have ${actions.length})`);
         // LSP permits a server to omit `edit` and require `codeAction/resolve`
-        // before applying. tsgo sometimes does this for source actions.
+        // before applying. The server sometimes does this for source actions.
         let resolved: CodeAction = target;
         if (!resolved.edit) {
           try {
@@ -973,7 +973,7 @@ function overlaps(
 }
 
 /** Whole-file source.organizeImports — open, wait for diagnostics, request
- * the action, resolve if `edit` was deferred, apply. tsgo defers the edit
+ * the action, resolve if `edit` was deferred, apply. the server defers the edit
  * for source actions often enough that the resolve hop is mandatory; we
  * silently fall through on resolve failure so a null return upstream means
  * "no edit available" rather than masking a different bug. */
@@ -1005,7 +1005,7 @@ async function runOrganizeImports(
   return applyWorkspaceEdit(client, resolved.edit, root);
 }
 
-/** Source-file extensions tsgo will actually process. Mirrors the set used by
+/** Source-file extensions the server will actually process. Mirrors the set used by
  * `expandFileArgs` to walk directories — kept here as a regex because we also
  * filter the (possibly user-supplied) literal/git list. */
 const TS_LIKE_EXT_RE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;

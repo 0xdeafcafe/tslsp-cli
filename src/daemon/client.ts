@@ -7,7 +7,7 @@ import {
   ensureProfilesDir,
   errLogPath,
   readSession,
-  SessionFile,
+  type SessionFile,
 } from "./registry.js";
 import type { Request, Response } from "./protocol.js";
 
@@ -19,16 +19,19 @@ export interface EnsureOptions {
 }
 
 export class DaemonVersionMismatch extends Error {
-  constructor(
-    public readonly clientVersion: string,
-    public readonly daemonVersion: string,
-    public readonly sessionName: string,
-  ) {
+  readonly clientVersion: string;
+  readonly daemonVersion: string;
+  readonly sessionName: string;
+
+  constructor(clientVersion: string, daemonVersion: string, sessionName: string) {
     const sessionFlag = sessionName !== "default" ? ` --session ${sessionName}` : "";
     super(
       `Daemon is v${daemonVersion}; client is v${clientVersion}. ` +
         `Run \`tslsp-cli${sessionFlag} daemon restart\` to upgrade the daemon.`,
     );
+    this.clientVersion = clientVersion;
+    this.daemonVersion = daemonVersion;
+    this.sessionName = sessionName;
   }
 }
 
