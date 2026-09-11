@@ -11,7 +11,7 @@ import {
 import { serve as serveDaemon } from "./daemon/server.js";
 import { formatValidationErrors, type Schema, validateShape } from "./schema.js";
 import { installSkills } from "./skill-install.js";
-import { TOOLS, getTool, ToolDef } from "./tools.js";
+import { TOOLS, getTool, type ToolDef } from "./tools.js";
 import { findProjectRoot, LspPool } from "./workspace.js";
 
 const VERBOSE_ENV = process.env.TSLSP_VERBOSE === "1";
@@ -479,7 +479,7 @@ function daemonHelp(): string {
   return [
     "tslsp-cli daemon <subcommand> [flags]",
     "",
-    "Manage the per-workspace daemon that holds a warm tsgo so subsequent",
+    "Manage the per-workspace daemon that holds a warm server so subsequent",
     "tool calls (with `--daemon`) skip per-invocation LSP startup.",
     "",
     "subcommands:",
@@ -505,7 +505,7 @@ export function rootHelp(): string {
     "  tslsp-cli <command> [args]",
     "  tslsp-cli --daemon <command> [args] route through a warm per-workspace daemon",
     "  tslsp-cli --json <command> [args]   emit a JSON envelope on stdout",
-    "  tslsp-cli --verbose <command>       forward tsgo stderr (non-daemon path)",
+    "  tslsp-cli --verbose <command>       forward server stderr (non-daemon path)",
     '  tslsp-cli --session NAME <command>  pick a named daemon session (default: "default")',
     "  tslsp-cli daemon <start|stop|restart|list|kill-all>",
     "  tslsp-cli install --skills [--project] [--force]",
@@ -521,16 +521,16 @@ export function rootHelp(): string {
   lines.push("global flags:");
   lines.push("  --daemon       route through warm per-workspace daemon");
   lines.push("  --json         emit JSON envelope ({ok,text,exitCode|error}) on stdout");
-  lines.push("  --verbose      forward tsgo stderr (non-daemon; for daemon use env)");
+  lines.push("  --verbose      forward server stderr (non-daemon; for daemon use env)");
   lines.push('  --session NAME named daemon session (default: "default")');
   lines.push("  --help, -h     show this message");
   lines.push("  --version, -v  print version");
   lines.push("");
   lines.push("env:");
-  lines.push("  TSLSP_VERBOSE=1            forward tsgo stderr to stderr");
+  lines.push("  TSLSP_VERBOSE=1            forward server stderr to stderr");
   lines.push("  TSLSP_DAEMON_DIR=PATH      override per-platform daemon cache dir");
   lines.push("  TSLSP_DAEMON_IDLE_MS=N     daemon self-exit after N ms idle (default 30m)");
-  lines.push("  TSLSP_TSGO_IDLE_MS=N       reap idle tsgos inside a pool (default 10m, 0 off)");
+  lines.push("  TSLSP_SERVER_IDLE_MS=N     reap idle servers inside a pool (default 10m, 0 off)");
   lines.push("  TSLSP_DAEMON_ENTRY=PATH    override the bin daemons re-exec (testing)");
   return lines.join("\n");
 }

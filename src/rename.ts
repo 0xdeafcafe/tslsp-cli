@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { LspClient, TextEdit, WorkspaceEdit } from "./lsp-client.js";
+import { LspClient, type TextEdit, type WorkspaceEdit } from "./lsp-client.js";
 import { uriToRel } from "./format.js";
 
 interface FileEdits {
@@ -82,7 +82,7 @@ function applyEditOnLine(line: string, e: TextEdit): string {
 }
 
 /** Apply a WorkspaceEdit to disk and notify the LSP so its index reprojects.
- * Skips writes whose computed text matches the file on disk — tsgo's
+ * Skips writes whose computed text matches the file on disk — the server's
  * source.organizeImports re-emits replacement edits on already-organised
  * files, and a no-op write would still bump mtime, fire watchers, and lie
  * about `files_changed`/`total_edits` in the summary. */

@@ -30,7 +30,7 @@ const NUDGE_MARKER = "<!-- tslsp-cli:auto-nudge -->";
 const NUDGE_BLOCK = [
   "## TypeScript / JavaScript",
   "",
-  "For any TS/JS identifier work in a `tsconfig.json` project, use `tslsp-cli` instead of grep, string-edit, `mv` / `git mv`, or `tsc`. tsgo actually understands the program; text tools see characters.",
+  "For any TS/JS identifier work in a `tsconfig.json` project, use `tslsp-cli` instead of grep, string-edit, `mv` / `git mv`, or `tsc`. the compiler actually understands the program; text tools see characters.",
   "",
   "- find usages → `tslsp-cli references --symbol NAME`",
   "- jump to definition → `tslsp-cli definition --symbol NAME`",

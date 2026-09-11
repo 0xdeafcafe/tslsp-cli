@@ -24,9 +24,9 @@ export function findProjectRoot(start: string): string | undefined {
  * Resolve the TypeScript binary for a project root and announce it once.
  *
  * Kept as a thin wrapper so the pool has a single seam and the announcement
- * happens exactly where a tsgo is about to be spawned.
+ * happens exactly where a server is about to be spawned.
  */
-export function resolveTsgoBin(rootPath: string): string {
+export function resolveServerBin(rootPath: string): string {
   const bin = resolveTsBinary(rootPath);
   announceTsBinary(bin);
   return bin.path;
@@ -34,7 +34,7 @@ export function resolveTsgoBin(rootPath: string): string {
 
 const announced = new Set<string>();
 
-/** One line per distinct binary per process — not once per spawned tsgo. */
+/** One line per distinct binary per process — not once per spawned server. */
 export function announceTsBinary(bin: ResolvedTsBinary): void {
   if (announced.has(bin.path)) return;
   announced.add(bin.path);
@@ -44,15 +44,15 @@ export function announceTsBinary(bin: ResolvedTsBinary): void {
 export interface LspPoolOptions {
   log?: (line: string) => void;
   /**
-   * Reap any tsgo idle longer than this. The daemon as a whole has its own
+   * Reap any server idle longer than this. The daemon as a whole has its own
    * idle timeout — this is finer-grained, so a daemon serving a monorepo can
-   * release a per-package tsgo without tearing down the daemon. 0 disables.
-   * Default: 10 min. Override via TSLSP_TSGO_IDLE_MS.
+   * release a per-package server without tearing down the daemon. 0 disables.
+   * Default: 10 min. Override via TSLSP_SERVER_IDLE_MS.
    */
-  tsgoIdleMs?: number;
+  serverIdleMs?: number;
 }
 
-const DEFAULT_TSGO_IDLE_MS = 10 * 60 * 1000;
+const DEFAULT_SERVER_IDLE_MS = 10 * 60 * 1000;
 
 /**
  * Parse a non-negative integer env var, falling back to a default with a
@@ -77,16 +77,17 @@ export class LspPool {
   private lastUsed = new Map<string, number>();
   private reapTimer?: NodeJS.Timeout;
   private log?: (line: string) => void;
-  private tsgoIdleMs: number;
+  private serverIdleMs: number;
 
   constructor(optsOrLog?: LspPoolOptions | ((line: string) => void)) {
     const opts: LspPoolOptions =
       typeof optsOrLog === "function" ? { log: optsOrLog } : (optsOrLog ?? {});
     this.log = opts.log;
-    this.tsgoIdleMs = opts.tsgoIdleMs ?? envIdleMs("TSLSP_TSGO_IDLE_MS", DEFAULT_TSGO_IDLE_MS);
-    if (this.tsgoIdleMs > 0) {
+    this.serverIdleMs =
+      opts.serverIdleMs ?? envIdleMs("TSLSP_SERVER_IDLE_MS", DEFAULT_SERVER_IDLE_MS);
+    if (this.serverIdleMs > 0) {
       // Check 4× per idle window, capped at every 30s.
-      const interval = Math.min(30_000, Math.max(1_000, Math.floor(this.tsgoIdleMs / 4)));
+      const interval = Math.min(30_000, Math.max(1_000, Math.floor(this.serverIdleMs / 4)));
       this.reapTimer = setInterval(() => this.reapIdle(), interval);
       // Don't keep the event loop alive just for the reaper.
       this.reapTimer.unref?.();
@@ -117,13 +118,13 @@ export class LspPool {
   /**
    * Look up or spawn the LspClient for `root`, then await its readiness and
    * seed. On failure: evict the client from the cache + dispose it so a retry
-   * spawns a fresh tsgo instead of reusing a broken one.
+   * spawns a fresh server instead of reusing a broken one.
    */
   private async getOrCreate(root: string): Promise<LspClient> {
     let client = this.clients.get(root);
     const fresh = !client;
     if (!client) {
-      const bin = resolveTsgoBin(root);
+      const bin = resolveServerBin(root);
       client = new LspClient({ binPath: bin, rootPath: root, log: this.log });
       this.clients.set(root, client);
     }
@@ -156,16 +157,16 @@ export class LspPool {
   }
 
   private reapIdle(): void {
-    if (this.tsgoIdleMs <= 0 || this.clients.size === 0) return;
+    if (this.serverIdleMs <= 0 || this.clients.size === 0) return;
     const now = Date.now();
     for (const [root, ts] of this.lastUsed) {
-      if (now - ts <= this.tsgoIdleMs) continue;
+      if (now - ts <= this.serverIdleMs) continue;
       const client = this.clients.get(root);
       if (!client) {
         this.lastUsed.delete(root);
         continue;
       }
-      this.log?.(`[lsp-pool] reaping idle tsgo for ${root}`);
+      this.log?.(`[lsp-pool] reaping idle server for ${root}`);
       this.clients.delete(root);
       this.lastUsed.delete(root);
       // Fire-and-forget; dispose is best-effort.

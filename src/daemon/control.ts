@@ -1,5 +1,5 @@
 import { canConnect, ensureDaemon, sendRequest } from "./client.js";
-import { deleteSession, listAllSessions, readSession, SessionFile } from "./registry.js";
+import { deleteSession, listAllSessions, readSession, type SessionFile } from "./registry.js";
 
 /**
  * Daemon-management helpers used by the `start`/`stop`/`restart`/`list`/

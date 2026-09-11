@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describeTsBinary, resolveTsBinary } from "../src/ts-binary.js";
 
 const PLATFORM_SUFFIX = `${process.platform}-${process.arch}`;
+
+function majorOf(version: string): number {
+  return parseInt(version.split(".")[0] ?? "", 10);
+}
+
 const EXE = process.platform === "win32" ? ".exe" : "";
 
 // realpath: macOS tmpdir is a symlink, and require.resolve reports real paths.
@@ -35,14 +47,19 @@ function plantTypescript(
     writeFileSync(shim, "#!/usr/bin/env node\n", "utf8");
     chmodSync(shim, 0o755);
   }
+  // The platform package is always planted, even when the binary inside it is
+  // not: under vitest, `require.resolve` from a temp dir walks all the way out
+  // to this repo's own node_modules, so an absent fixture package resolves to
+  // the real one. A planted-but-empty package keeps the lookup inside the
+  // fixture and the missing-binary branch honest.
   const platformDir = join(root, "node_modules", "@typescript", `typescript-${PLATFORM_SUFFIX}`);
   const exe = join(platformDir, "lib", `tsc${EXE}`);
+  writeJson(join(platformDir, "package.json"), {
+    name: `@typescript/typescript-${PLATFORM_SUFFIX}`,
+    version,
+  });
+  mkdirSync(join(platformDir, "lib"), { recursive: true });
   if (opts.platformExe !== false) {
-    writeJson(join(platformDir, "package.json"), {
-      name: `@typescript/typescript-${PLATFORM_SUFFIX}`,
-      version,
-    });
-    mkdirSync(join(platformDir, "lib"), { recursive: true });
     writeFileSync(exe, "", "utf8");
     chmodSync(exe, 0o755);
   }
@@ -135,24 +152,33 @@ describe("resolveTsBinary", () => {
   });
 
   describe("given the workspace has no TypeScript at all", () => {
-    it("falls back to the bundled native-preview", () => {
+    it("falls back to the bundled typescript", () => {
       const root = newDir();
       const bundledDir = newDir();
-      const { exe } = plantNativePreview(bundledDir, "7.0.0-dev.20260506.1");
+      const { exe } = plantTypescript(bundledDir, "7.0.2");
       const bin = resolveTsBinary(root, { bundledDir });
-      expect(bin.source).toBe("bundled-native-preview");
+      expect(bin.source).toBe("bundled-typescript");
+      expect(bin.packageName).toBe("typescript");
       expect(bin.path).toBe(exe);
     });
 
-    it("throws naming both ways out when the bundle is missing too", () => {
-      expect(() => resolveTsBinary(newDir(), { bundledDir: newDir() })).toThrow(
-        /typescript@>=7.*native-preview/s,
-      );
+    it("resolves tslsp-cli's own typescript when no bundle dir is given", () => {
+      // No bundledDir: the real fallback path, through Node's resolution from
+      // this module. Proves the shipped dependency is reachable and executable.
+      const bin = resolveTsBinary(newDir());
+      expect(bin.source).toBe("bundled-typescript");
+      expect(bin.packageName).toBe("typescript");
+      expect(majorOf(bin.version)).toBeGreaterThanOrEqual(7);
+      expect(existsSync(bin.path)).toBe(true);
+    });
+
+    it("throws naming the way out when the bundle is missing too", () => {
+      expect(() => resolveTsBinary(newDir(), { bundledDir: newDir() })).toThrow(/typescript@>=7/s);
     });
   });
 
   describe("given the platform package is missing", () => {
-    it("falls back to the package's own bin shim", () => {
+    it("falls back to the package's own bin shim when the binary is absent", () => {
       const root = newDir();
       const { shim } = plantTypescript(root, "7.0.2", { platformExe: false });
       const bin = resolveTsBinary(root, { bundledDir: newDir() });

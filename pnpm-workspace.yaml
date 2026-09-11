@@ -1,0 +1,16 @@
+# pnpm reads its settings from here, not .npmrc or a `pnpm` block in
+# package.json.
+
+# Dependency build scripts are blocked by default — supply-chain hygiene. Every
+# one is decided explicitly, with why.
+allowBuilds:
+  # vitest's bundler; its script puts the platform binary in place.
+  esbuild: true
+  # Reached transitively through the LangWatch SDK the evals use. Its script
+  # downloads a tunnel binary at install time, and nothing here opens a tunnel.
+  cloudflared: false
+
+# Security floor, not a preference: pulled in transitively by the OpenTelemetry
+# SDK the evals use.
+overrides:
+  protobufjs: ">=8.0.2"

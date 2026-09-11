@@ -4,11 +4,11 @@
 [![CI](https://github.com/0xdeafcafe/tslsp-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/0xdeafcafe/tslsp-cli/actions/workflows/ci.yml)
 [![node](https://img.shields.io/node/v/@0xdeafcafe/tslsp-cli.svg?logo=node.js)](https://github.com/0xdeafcafe/tslsp-cli/blob/main/package.json)
 
-Type-aware TypeScript/JavaScript code intelligence as a CLI. Wraps [tsgo](https://github.com/microsoft/typescript-go) (Microsoft's native Go port of tsserver) and exposes its LSP capabilities — `references`, `definition`, `rename`, `rename-file`, `hover`, `outline`, `diagnostics`, `call-hierarchy`, `code-action` — as a small set of agent-friendly commands.
+Type-aware TypeScript/JavaScript code intelligence as a CLI. Drives the TypeScript compiler's own language server — TypeScript 7 is the [native Go build](https://github.com/microsoft/typescript-go), and `tsc --lsp` is the engine your editor talks to — and exposes its LSP capabilities — `references`, `definition`, `rename`, `rename-file`, `hover`, `outline`, `diagnostics`, `call-hierarchy`, `code-action` — as a small set of agent-friendly commands.
 
 The point is to give coding agents an alternative to grep/find-and-replace/`mv` on identifier-level work. `rename` updates every reference. `rename-file` rewrites every import. `outline` returns the LSP's structural view, not 200 lines of source.
 
-One tsgo per `tsconfig.json`, lazy-spawned. Optional `--daemon` keeps tsgo warm across calls.
+One server per `tsconfig.json`, lazy-spawned. Optional `--daemon` keeps it warm across calls.
 
 ## install
 
@@ -97,7 +97,7 @@ tslsp-cli outline      'src/**/*.ts'                 # quote the glob
 tslsp-cli diagnostics  src/api/                      # directory walk
 ```
 
-Blocks are labelled `=== name ===`. `find-symbol` serializes internally (tsgo's `workspace/symbol` races at cold-start); everything else fans out.
+Blocks are labelled `=== name ===`. `find-symbol` serializes internally (the server's `workspace/symbol` races at cold-start); everything else fans out.
 
 Glob and directory inputs are filtered through a source-extension set (`.ts/.tsx/.mts/.cts/.js/.jsx/.mjs/.cjs`) and an ignore set (`node_modules`, `.git`, `dist`, `build`, `out`, `.next`, `coverage`). Mention an ignored segment in the pattern itself (e.g. `node_modules/**/*.ts`) to include those hits.
 
@@ -105,42 +105,44 @@ Batched output is squeezed: clean items drop their `=== file ===` headers, all-c
 
 ## which typescript
 
-the LSP has to be the _same compiler your project type-checks with_. a bundled
-compiler that's three months ahead of (or behind) your `tsc` will disagree with
-it on real code, and you'll trust the wrong one. so tslsp-cli resolves the
-binary from the workspace it's serving, walking up from the `tsconfig.json`
-root — never from `process.cwd()`, never from `PATH`:
+The LSP has to be the _same compiler your project type-checks with_. A bundled
+compiler three months ahead of (or behind) your `tsc` will disagree with it on
+real code, and you'll trust the wrong one. So tslsp-cli resolves the binary from
+the workspace it's serving, walking up from the `tsconfig.json` root — never
+from `process.cwd()`, never from `PATH`:
 
 | order | where                                                       | binary                                       |
 | ----- | ----------------------------------------------------------- | -------------------------------------------- |
 | 1     | the project's own `typescript` (7.x — nearest node_modules) | `@typescript/typescript-<plat>/lib/tsc`      |
 | 2     | the project's `@typescript/native-preview`                  | `@typescript/native-preview-<plat>/lib/tsgo` |
-| 3     | tslsp-cli's own bundled `@typescript/native-preview`        | same, from tslsp-cli's install               |
+| 3     | tslsp-cli's own `typescript`                                | `@typescript/typescript-<plat>/lib/tsc`      |
 
-TypeScript 7 ships the native binary — it _is_ tsgo, published under the
-`typescript` name, and `node_modules/.bin/tsc` points at it. tslsp-cli resolves
-that exact file (skipping the node shim, so there's no extra process per spawn).
-`typescript` below 7 is the JavaScript compiler with no LSP, so it's skipped.
-nearest `node_modules` wins, which is what you want in a monorepo: a package
-that pins its own compiler gets it, everything else gets the root's.
+TypeScript 7 ships the native compiler under the `typescript` name: the Go
+engine that spent its preview as `tsgo` is now just `tsc`, and it answers LSP on
+`tsc --lsp --stdio`. tslsp-cli resolves that exact executable, skipping the Node
+shim so there's no extra process per spawn. `typescript` below 7 is the
+JavaScript compiler with no LSP, so it's skipped. Nearest `node_modules` wins,
+which is what you want in a monorepo: a package that pins its own compiler gets
+it, everything else gets the root's. Row 2 is for projects still on the pre-7.0
+dev channel.
 
-every run prints one line to stderr naming what it picked:
+Every run prints one line to stderr naming what it picked:
 
 ```
 tslsp-cli: using typescript 7.0.2 (workspace typescript) at /repo/node_modules/@typescript/typescript-darwin-arm64/lib/tsc
 ```
 
-**install story.** `tslsp-cli` installs globally, so it can't rely on a peer
-dependency being there — `typescript` is declared as an _optional_ peer (per-project
-installs pick your version up automatically and npm won't nag) and
-`@typescript/native-preview` stays a real dependency, the fallback for a global
-install, a project on TypeScript 6, or a folder with no `node_modules` at all.
-that fallback is pinned to a dev build; bump it deliberately.
+**Install story.** `tslsp-cli` installs globally, so it can't count on the
+project having a compiler at all: it depends on `typescript` itself, and that
+copy is the fallback for a global install, a project on TypeScript 6, or a
+folder with no `node_modules`. It's a released version on a normal semver range,
+not a pinned dev build — and whenever the project has its own, the project's
+wins.
 
 ## daemon
 
 ```
-tslsp-cli <cmd>             fresh tsgo per invocation; disposed after the call
+tslsp-cli <cmd>             fresh server per invocation; disposed after the call
 tslsp-cli --daemon <cmd>    RPC into a per-workspace daemon
 ```
 
@@ -154,15 +156,15 @@ tslsp-cli daemon stop           # graceful stop for this workspace
 tslsp-cli daemon kill-all       # SIGKILL every daemon
 ```
 
-The daemon self-exits after 30 min idle (`TSLSP_DAEMON_IDLE_MS`); individual tsgos inside reap after 10 min (`TSLSP_TSGO_IDLE_MS`). Version-skewed daemons refuse new calls — run `daemon restart` after upgrading.
+The daemon self-exits after 30 min idle (`TSLSP_DAEMON_IDLE_MS`); individual servers inside reap after 10 min (`TSLSP_SERVER_IDLE_MS`). Version-skewed daemons refuse new calls — run `daemon restart` after upgrading.
 
 ## gotchas
 
 - Answers with **your project's** TypeScript, not its own. See [which typescript](#which-typescript) — if the version in the startup line isn't the one you expect, that's why the LSP and your `tsc` disagree.
 - `rename` and `rename-file` write to disk. `--dry-run` previews first; `git diff` is your friend either way.
 - Always quote glob patterns (`'src/**/*.ts'`). Unquoted globs that match nothing in your shell become literal arguments and the LSP errors instead of the expander finding zero files.
-- One tsgo per `tsconfig.json` root. Monorepos pay project-load cost the first time each project is hit (~50ms small, more on large).
+- One server per `tsconfig.json` root. Monorepos pay project-load cost the first time each project is hit (~50ms small, more on large).
 - `--daemon` keeps files open across calls. External edits between two daemon-routed calls may briefly lag until the next file-open or `didChangeWatchedFiles` event.
 - Daemon stderr lives at `$CACHE/tslsp/daemon/<hash>/<session>.err` — first place to look if a spawn fails.
-- `TSLSP_VERBOSE=1` forwards tsgo's stderr.
-- A `tsgo` installed on your `PATH` is ignored. PATH is never consulted.
+- `TSLSP_VERBOSE=1` forwards the server's stderr.
+- A `tsc` or `tsgo` on your `PATH` is ignored. PATH is never consulted.

@@ -1,7 +1,7 @@
 {
   "name": "@0xdeafcafe/tslsp-cli",
   "version": "0.6.0",
-  "description": "Type-aware TypeScript code intelligence CLI — rename, references, definitions, hover, symbols, diagnostics, call hierarchy, code actions. Backed by tsgo.",
+  "description": "Type-aware TypeScript code intelligence CLI — rename, references, definitions, hover, symbols, diagnostics, call hierarchy, code actions. Backed by the TypeScript 7 native compiler.",
   "keywords": [
     "claude",
     "claude-code",
@@ -31,8 +31,9 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "pnpm run clean && tsc",
-    "dev": "tsc --watch",
+    "build": "pnpm run clean && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -45,33 +46,19 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@typescript/native-preview": "7.0.0-dev.20260506.1"
+    "typescript": "^7.0.2"
   },
   "devDependencies": {
-    "@opentelemetry/sdk-node": "^0.218.0",
-    "@types/node": "^24.13.2",
-    "@vitest/ui": "^4.1.8",
-    "langwatch": "^0.32.0",
-    "oxfmt": "^0.53.0",
-    "oxlint": "^1.68.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
-  },
-  "peerDependencies": {
-    "typescript": ">=7"
-  },
-  "peerDependenciesMeta": {
-    "typescript": {
-      "optional": true
-    }
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@types/node": "^24.13.4",
+    "@vitest/ui": "^5.0.0",
+    "langwatch": "^1.13.0",
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0",
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.29.3",
-  "pnpm": {
-    "overrides": {
-      "protobufjs": ">=8.0.2"
-    }
-  }
+  "packageManager": "pnpm@11.26.0"
 }

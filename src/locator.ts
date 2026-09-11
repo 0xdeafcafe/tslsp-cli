@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { LspClient, Position, SymbolInformation } from "./lsp-client.js";
+import { LspClient, type Position, type SymbolInformation } from "./lsp-client.js";
 import { findProjectRoot, LspPool } from "./workspace.js";
 
 export interface SymbolLocator {
@@ -24,11 +24,11 @@ export interface ResolvedPosition {
 }
 
 export class LocatorError extends Error {
-  constructor(
-    message: string,
-    public readonly candidates?: SymbolInformation[],
-  ) {
+  readonly candidates?: SymbolInformation[];
+
+  constructor(message: string, candidates?: SymbolInformation[]) {
     super(message);
+    this.candidates = candidates;
   }
 }
 

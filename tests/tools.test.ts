@@ -8,7 +8,7 @@ import {
 
 // Direct unit tests for fanout's empty-collapse behavior. Exercising this via
 // the real CLI requires a deterministic tool path with real findings AND real
-// empties in the same call — diagnostics would be the natural fit, but tsgo's
+// empties in the same call — diagnostics would be the natural fit, but the server's
 // native preview doesn't push `publishDiagnostics` for unopened files in the
 // timeframe we wait, so the e2e mixed-case isn't reliable. Hitting fanout
 // directly with synthetic ToolResults is both deterministic and exact about

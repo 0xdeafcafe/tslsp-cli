@@ -1,7 +1,7 @@
 {
   "name": "tslsp",
   "version": "0.3.0",
-  "description": "Type-aware TypeScript/JavaScript code intelligence skill for Claude Code. Routes symbol-level work (find usages, jump-to-def, rename, move file with import rewrites, hover, diagnostics, call hierarchy) through tsgo (Microsoft's native TypeScript LSP) instead of Grep/Edit/mv.",
+  "description": "Type-aware TypeScript/JavaScript code intelligence skill for Claude Code. Routes symbol-level work (find usages, jump-to-def, rename, move file with import rewrites, hover, diagnostics, call hierarchy) through the TypeScript compiler's own language server instead of Grep/Edit/mv.",
   "author": {
     "name": "Alexander Forbes-Reed",
     "email": "me@alex.forbes.red",

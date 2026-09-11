@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pnpm install            # first-time setup
-pnpm run build          # clean + tsc → dist/
-pnpm run dev            # tsc --watch
+pnpm run build          # clean + tsc -p tsconfig.build.json → dist/
+pnpm run dev            # build project, watch mode
+pnpm run typecheck      # tsc --noEmit over src + tests, emits nothing
 pnpm test               # vitest run (all tests)
 pnpm test -- <pattern>  # filter by test file: e.g. `pnpm test -- locator`
 pnpm test:watch         # watch mode
@@ -18,20 +19,24 @@ node dist/cli.js <cmd>  # invoke the built CLI locally
 
 `tests/cli-e2e.test.ts` spawns the built CLI via `node dist/cli.js`, so it runs `pnpm run build` automatically when `dist/cli.js` is missing — but a stale build silently runs the old behavior. **Rebuild before iterating on the e2e suite.**
 
-The package manager is `pnpm@10.29.3` (pinned in `packageManager`). Validation is hand-rolled in `src/schema.ts`.
+Two TypeScript projects: `tsconfig.json` is the checking project (`src` + `tests` + `vitest.config.ts`, `noEmit`) and `tsconfig.build.json` is the emitting one (`src` only). Tests are inside the checked project on purpose — they were not, and carried type errors nobody saw. `erasableSyntaxOnly` is on, so no parameter properties, enums or namespaces: declare the fields.
 
-**Which TypeScript the LSP runs** is decided by `src/ts-binary.ts`, not by our dependencies: it walks up from the tsconfig root and takes the workspace's `typescript` (7.x, whose `tsc` _is_ the native binary), else the workspace's `@typescript/native-preview`, else the bundled one. `typescript` is an optional peer dependency; `@typescript/native-preview` stays a real dependency as the last-resort fallback for global installs, and is pinned to a dev build — bump deliberately. `workspace.ts` prints one stderr line per distinct binary naming the pick and its version.
+pnpm blocks dependency build scripts by default; the allowlist is `allowBuilds` in `pnpm-workspace.yaml`, which is also where pnpm's settings live now (there is no `.npmrc`).
+
+The package manager is `pnpm@11.26.0` (pinned in `packageManager`). Validation is hand-rolled in `src/schema.ts`.
+
+**Which TypeScript the LSP runs** is decided by `src/ts-binary.ts`, not by our dependencies: it walks up from the tsconfig root and takes the workspace's `typescript` (7.x, whose `tsc` _is_ the native binary), else the workspace's `@typescript/native-preview` (a project still on the pre-7.0 dev channel), else our own. `typescript` is a normal runtime dependency on a semver range — the last-resort fallback for a global install, a project on TypeScript 6, or a folder with no `node_modules`. It is resolved through Node rather than a fixed path, because a global `npm i -g` hoists it above the package directory. `workspace.ts` prints one stderr line per distinct binary naming the pick and its version.
 
 ## Architecture
 
-This is a CLI in front of **tsgo** (Microsoft's native Go port of tsserver). It speaks LSP, exposes a small set of code-intelligence commands designed for AI agents, and bills itself as the type-aware replacement for `Grep`/`Edit`/`mv` on TypeScript identifiers.
+This is a CLI in front of the TypeScript compiler's own language server — `tsc --lsp --stdio`, the native Go build that shipped as `tsgo` through the preview and is plain `tsc` from TypeScript 7. It speaks LSP, exposes a small set of code-intelligence commands designed for AI agents, and bills itself as the type-aware replacement for `Grep`/`Edit`/`mv` on TypeScript identifiers.
 
 ### Request flow
 
 ```
 argv → cli.ts → tool dispatch → tools.ts handler → LspPool (workspace.ts)
                                                        ↓
-                                                   LspClient (lsp-client.ts) ↔ tsgo subprocess
+                                                   LspClient (lsp-client.ts) ↔ tsc --lsp subprocess
 ```
 
 Every position-taking command first runs through **`resolveLocator` (`src/locator.ts`)** which accepts three forms (in priority order):
@@ -46,8 +51,8 @@ Tool handlers receive an already-resolved `{client, root, uri, position}` so the
 
 The same tool code is reachable via two paths, selected by a `--daemon` global flag:
 
-- **fresh-process (default):** `runCli` builds an `LspPool`, calls the handler, disposes. One tsgo spawn per invocation.
-- **daemon:** `runToolViaDaemon` connects to (or autospawns) a per-workspace Unix socket daemon. The daemon owns a long-lived `LspPool` so subsequent calls reuse warm tsgos.
+- **fresh-process (default):** `runCli` builds an `LspPool`, calls the handler, disposes. One server spawn per invocation.
+- **daemon:** `runToolViaDaemon` connects to (or autospawns) a per-workspace Unix socket daemon. The daemon owns a long-lived `LspPool` so subsequent calls reuse warm servers.
 
 The daemon side lives in `src/daemon/`:
 
@@ -67,7 +72,7 @@ The CLI dispatcher (`cli.ts:runTool`) parses argv via `parseArgs` (`cli-args.ts`
 
 ### Output conventions
 
-Handlers return `ToolResult { text, isError?, empty? }`. `empty: true` signals "no findings" so the `fanout`/`serialJoin` helpers (`tools.ts`) can collapse all-empty batches to a single short line and drop `=== file ===` headers for clean items. `find-symbol` uses `serialJoin` because tsgo's `workspace/symbol` races at cold-start; everything else fans out.
+Handlers return `ToolResult { text, isError?, empty? }`. `empty: true` signals "no findings" so the `fanout`/`serialJoin` helpers (`tools.ts`) can collapse all-empty batches to a single short line and drop `=== file ===` headers for clean items. `find-symbol` uses `serialJoin` because the server's `workspace/symbol` races at cold-start; everything else fans out.
 
 Format helpers in `src/format.ts` are pure — they produce lines like `path:line:col snippet` (locations) or `path (N): l1, l2, l3` (refs `--summary`). Touch these to change agent-facing output shape.
 

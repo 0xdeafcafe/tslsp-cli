@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 /**
  * Where the TypeScript binary we speak LSP to came from, in preference order.
@@ -11,7 +10,7 @@ import { fileURLToPath } from "node:url";
 export type TsBinarySource =
   | "workspace-typescript"
   | "workspace-native-preview"
-  | "bundled-native-preview";
+  | "bundled-typescript";
 
 export interface ResolvedTsBinary {
   /** Executable to spawn with `--lsp --stdio`. */
@@ -27,8 +26,8 @@ export interface ResolvedTsBinary {
 
 export interface ResolveTsBinaryOptions {
   /**
-   * Directory whose `node_modules` holds tslsp-cli's own bundled fallback.
-   * Defaults to tslsp-cli's package root.
+   * Directory whose `node_modules` holds the bundled fallback. Defaults to
+   * resolving `typescript` the way Node does from tslsp-cli's own install.
    */
   bundledDir?: string;
 }
@@ -36,7 +35,7 @@ export interface ResolveTsBinaryOptions {
 const SOURCE_LABELS: Record<TsBinarySource, string> = {
   "workspace-typescript": "workspace typescript",
   "workspace-native-preview": "workspace @typescript/native-preview",
-  "bundled-native-preview": "bundled @typescript/native-preview",
+  "bundled-typescript": "bundled typescript",
 };
 
 /** One line for the log, naming what we picked and where it came from. */
@@ -50,8 +49,9 @@ export function describeTsBinary(bin: ResolvedTsBinary): string {
  *
  * Order:
  *   1. the workspace's own `typescript` (7.x ships the native binary as `tsc`)
- *   2. the workspace's `@typescript/native-preview` (`tsgo`)
- *   3. tslsp-cli's bundled `@typescript/native-preview`
+ *   2. the workspace's `@typescript/native-preview` (`tsgo`), for a project
+ *      still on the pre-7.0 dev channel
+ *   3. tslsp-cli's own `typescript`
  *
  * Nearest node_modules wins, walking up from the project root — so a package in
  * a monorepo gets its own pinned compiler if it has one and the root's if not.
@@ -75,23 +75,33 @@ export function resolveTsBinary(
     if (preview) return preview;
   }
 
-  const bundledDir = opts.bundledDir ?? defaultBundledDir();
-  const bundled = fromPackage(
-    join(bundledDir, "node_modules", "@typescript", "native-preview"),
-    "bundled-native-preview",
-  );
+  const bundled = bundledTypescript(opts);
   if (bundled) return bundled;
 
   throw new Error(
-    "Could not find a TypeScript native binary. Install typescript@>=7 (or " +
-      "@typescript/native-preview) in the workspace, or reinstall tslsp-cli " +
-      "so its bundled fallback is present.",
+    "Could not find a TypeScript native binary. Install typescript@>=7 in the " +
+      "workspace, or reinstall tslsp-cli so its own copy is present.",
   );
 }
 
-function defaultBundledDir(): string {
-  // dist/ts-binary.js → package root.
-  return join(dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * tslsp-cli's own `typescript`, the fallback for a workspace with none of its
+ * own — a folder outside any project, or one still on TypeScript 6.
+ *
+ * Resolved through Node rather than a fixed `<package>/node_modules/typescript`
+ * path: a global `npm install -g` hoists dependencies above the package
+ * directory, where that path does not exist.
+ */
+function bundledTypescript(opts: ResolveTsBinaryOptions): ResolvedTsBinary | undefined {
+  if (opts.bundledDir !== undefined) {
+    return fromPackage(join(opts.bundledDir, "node_modules", "typescript"), "bundled-typescript");
+  }
+  try {
+    const require = createRequire(import.meta.url);
+    return fromPackage(dirname(require.resolve("typescript/package.json")), "bundled-typescript");
+  } catch {
+    return undefined;
+  }
 }
 
 function* walkUp(start: string): Generator<string> {

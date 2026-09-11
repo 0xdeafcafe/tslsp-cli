@@ -56,8 +56,8 @@ describe("LspPool idle reaper", () => {
     pool = undefined;
   });
 
-  it("reaps a tsgo idle past tsgoIdleMs", async () => {
-    pool = new LspPool({ tsgoIdleMs: 400 });
+  it("reaps a server idle past serverIdleMs", async () => {
+    pool = new LspPool({ serverIdleMs: 400 });
     await pool.forFile(join(nested, "Button.tsx"));
     expect(pool.roots()).toEqual([root]);
     // Reaper interval = idle/4 = 100ms; wait ≥ 2× idle so we definitely cross.
@@ -65,8 +65,8 @@ describe("LspPool idle reaper", () => {
     expect(pool.roots()).toEqual([]);
   });
 
-  it("does not reap when tsgoIdleMs is 0", async () => {
-    pool = new LspPool({ tsgoIdleMs: 0 });
+  it("does not reap when serverIdleMs is 0", async () => {
+    pool = new LspPool({ serverIdleMs: 0 });
     await pool.forFile(join(nested, "Button.tsx"));
     await new Promise((r) => setTimeout(r, 500));
     expect(pool.roots()).toEqual([root]);

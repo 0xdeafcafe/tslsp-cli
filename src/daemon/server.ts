@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { createServer, Server, Socket } from "node:net";
 import { formatValidationErrors, type Schema, validateShape } from "../schema.js";
-import { getTool, ToolResult } from "../tools.js";
+import { getTool, type ToolResult } from "../tools.js";
 import { envIdleMs, LspPool } from "../workspace.js";
 import { deleteSession, ensureProfilesDir, socketPathFor, writeSession } from "./registry.js";
 import type { Request, Response, RunParams } from "./protocol.js";
