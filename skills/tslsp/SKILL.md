@@ -63,6 +63,8 @@ You will be tempted to use Grep "just to look." Resist. Workspace symbol search 
 
 These are HARD rules. They apply to every identifier — slice keys (`features.fooUi`), property names, enum members, type aliases, parameter names. "It's just a few files" is exactly how a missed import ships.
 
+**In a monorepo, anchor every call to a file.** `--symbol NAME` alone and `find-symbol` search every project, and that loads every project into the language server: past a quarter of the machine's memory, tslsp-cli stops it and the call fails. Give `--file F --line L --symbol NAME` instead, and work one package at a time. When a call fails for memory, narrow it; don't run it again as it was.
+
 ## Copy these patterns
 
 ```bash

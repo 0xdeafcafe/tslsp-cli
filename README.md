@@ -122,6 +122,12 @@ tslsp-cli daemon kill-all       # SIGKILL every daemon
 
 The daemon self-exits after 30 min idle (`TSLSP_DAEMON_IDLE_MS`); individual tsgos inside reap after 10 min (`TSLSP_TSGO_IDLE_MS`). Version-skewed daemons refuse new calls — run `daemon restart` after upgrading.
 
+## engine and memory
+
+The language server is [tsrs](https://github.com/maschwenk/tsrs), the Rust port of tsgo, where its binary exists (macOS arm64, Linux x64 and arm64), else tsgo. `TSLSP_ENGINE=tsgo` or `tsrs` picks one. On a 54-module monorepo, with one file open per module, tsrs held 1.9 GiB and tsgo 4.6 GiB, and tsrs loaded them in 5s where tsgo took 30s.
+
+Each server is stopped once it holds more than a quarter of the machine's memory, at least 2 GiB (`TSLSP_MAX_MEMORY_MB`; `0` turns the cap off). The call in flight fails with what to do instead, and the next call starts a fresh server. A `--symbol` search with no `--file` loads every project, which is what grows a server past what the machine has: give `--file` and `--line` in a monorepo.
+
 ## gotchas
 
 - `@typescript/native-preview` is pinned to a specific dev build. tsgo moves fast; bump it deliberately.

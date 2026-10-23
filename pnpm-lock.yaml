@@ -39,6 +39,10 @@ importers:
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/ui@4.1.8)(vite@8.0.10(@types/node@24.13.2)(esbuild@0.28.0)(tsx@4.22.4)(yaml@2.9.0))
+    optionalDependencies:
+      '@maschwenk/tsrs':
+        specifier: 0.11.0-ts7.1.0-dev.20260929
+        version: 0.11.0-ts7.1.0-dev.20260929
 
 packages:
 
@@ -221,6 +225,31 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@maschwenk/tsrs-darwin-arm64@0.11.0-ts7.1.0-dev.20260929':
+    resolution: {integrity: sha512-an37GnGGrM584K+kNErXYqB2zT58TCiVBjuBqMaVkaiK2AAbHE/yWAX3MfyOZW2gufx/6ToOwSqWpDvdvvqrNw==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@maschwenk/tsrs-linux-arm64@0.11.0-ts7.1.0-dev.20260929':
+    resolution: {integrity: sha512-+PiMQrCyjQLpt+XtJxDdQT3ZlJKBFx+qqqHEbOLMWBy/GzQ0D6oz3dLTLa3Y7Ws0VfAlGj4IJ/Ofmi3jZUSCKg==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@maschwenk/tsrs-linux-x64@0.11.0-ts7.1.0-dev.20260929':
+    resolution: {integrity: sha512-7N4LA5zdbw6uYHFziruI2KniCB94ZPiuti3G7PpnPobcwJYnbkLD+2AK0bP1ZflS6tSwevqXVWNnRLENlfMj6w==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@maschwenk/tsrs@0.11.0-ts7.1.0-dev.20260929':
+    resolution: {integrity: sha512-MUVtk+PqtjuVE3Yd85onGogQv7hE1+XNWiwAjIoUhiLHBTYrglEyFIFyaMec0F07wQESPilEprAdgGLlopraJA==}
+    engines: {node: '>=16.20.0'}
+    hasBin: true
 
   '@napi-rs/wasm-runtime@1.1.5':
     resolution: {integrity: sha512-AWPoBRJ9tsnVhor4sjO7rkni+7p+2IAEFj6cx06UgP10jkQHqay/36uRV/bFkgrh18D9vb4cr8Q0Pthskgzy+Q==}
@@ -1691,6 +1720,22 @@ snapshots:
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@maschwenk/tsrs-darwin-arm64@0.11.0-ts7.1.0-dev.20260929':
+    optional: true
+
+  '@maschwenk/tsrs-linux-arm64@0.11.0-ts7.1.0-dev.20260929':
+    optional: true
+
+  '@maschwenk/tsrs-linux-x64@0.11.0-ts7.1.0-dev.20260929':
+    optional: true
+
+  '@maschwenk/tsrs@0.11.0-ts7.1.0-dev.20260929':
+    optionalDependencies:
+      '@maschwenk/tsrs-darwin-arm64': 0.11.0-ts7.1.0-dev.20260929
+      '@maschwenk/tsrs-linux-arm64': 0.11.0-ts7.1.0-dev.20260929
+      '@maschwenk/tsrs-linux-x64': 0.11.0-ts7.1.0-dev.20260929
+    optional: true
 
   '@napi-rs/wasm-runtime@1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:

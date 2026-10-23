@@ -57,6 +57,9 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   },
+  "optionalDependencies": {
+    "@maschwenk/tsrs": "0.11.0-ts7.1.0-dev.20260929"
+  },
   "engines": {
     "node": ">=22"
   },

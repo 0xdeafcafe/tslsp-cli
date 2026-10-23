@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { maxServerMemoryBytes, resolveServerBin } from "./engine.js";
 import { LspClient } from "./lsp-client.js";
 
 /** Walk up from `start` looking for the nearest tsconfig.json. */
@@ -141,8 +142,23 @@ export class LspPool {
     let client = this.clients.get(root);
     const fresh = !client;
     if (!client) {
-      const bin = resolveTsgoBin(root);
-      client = new LspClient({ binPath: bin, rootPath: root, log: this.log });
+      const { engine, bin } = resolveServerBin(root);
+      const created: LspClient = new LspClient({
+        binPath: bin,
+        rootPath: root,
+        engine,
+        maxMemoryBytes: maxServerMemoryBytes(),
+        log: this.log,
+        // A server that died (its memory cap, the machine's) is dropped, so
+        // the next call starts a fresh one instead of failing on a dead one.
+        onExit: () => {
+          if (this.clients.get(root) === created) {
+            this.clients.delete(root);
+            this.lastUsed.delete(root);
+          }
+        },
+      });
+      client = created;
       this.clients.set(root, client);
     }
     try {

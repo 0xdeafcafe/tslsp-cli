@@ -2,6 +2,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { memoryOf } from "./engine.js";
 
 export interface Location {
   uri: string;
@@ -106,6 +107,12 @@ interface PendingRequest {
 export interface LspClientOptions {
   binPath: string;
   rootPath: string;
+  /** Which server binPath is, for messages: "tsrs" or "tsgo". */
+  engine?: string;
+  /** Bytes the server may hold before it's stopped; 0 or unset for no cap. */
+  maxMemoryBytes?: number;
+  /** Told once when the server process has gone, however it went. */
+  onExit?: () => void;
   /** Optional logger for diagnostics; default silent. */
   log?: (line: string) => void;
 }
@@ -122,6 +129,8 @@ export class LspClient {
   private closed = false;
   private log: (line: string) => void;
   private serverCaps: ServerCapabilities = {};
+  private memoryTimer?: NodeJS.Timeout;
+  private stoppedFor?: Error;
 
   constructor(private opts: LspClientOptions) {
     this.log = opts.log ?? (() => {});
@@ -129,19 +138,26 @@ export class LspClient {
       cwd: opts.rootPath,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    const engine = opts.engine ?? "tsgo";
     this.proc.stderr?.on("data", (d: Buffer) =>
-      this.log(`[tsgo stderr] ${d.toString().trimEnd()}`),
+      this.log(`[${engine} stderr] ${d.toString().trimEnd()}`),
     );
     this.proc.stdout?.on("data", (chunk: Buffer) => this.onStdout(chunk));
-    this.proc.on("exit", (code) => {
+    this.proc.on("exit", (code, signal) => {
       this.closed = true;
-      const err = new Error(`tsgo exited (code=${code})`);
+      if (this.memoryTimer) clearInterval(this.memoryTimer);
+      const err =
+        this.stoppedFor ??
+        new Error(`${engine} exited (${signal ? `signal ${signal}` : `code=${code}`})`);
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
         p.reject(err);
       }
       this.pending.clear();
+      opts.onExit?.();
     });
+    if (opts.maxMemoryBytes && opts.maxMemoryBytes > 0)
+      this.watchMemory(opts.maxMemoryBytes, engine);
     this.initialized = this.handshake();
   }
 
@@ -377,7 +393,38 @@ export class LspClient {
     if (seed) await this.syncOpen(seed);
   }
 
+  /**
+   * Stop the server once it holds more than max: a query over a whole
+   * monorepo (a workspace symbol search loads every project) grows it past
+   * what the machine has. The call in flight fails with what to do instead.
+   */
+  private watchMemory(max: number, engine: string): void {
+    let looking = false;
+    this.memoryTimer = setInterval(() => {
+      const pid = this.proc.pid;
+      if (looking || this.closed || pid === undefined) return;
+      looking = true;
+      void memoryOf(pid)
+        .then((held) => {
+          if (held <= max || this.closed) return;
+          const gib = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GiB`;
+          this.stoppedFor = new Error(
+            `the ${engine} language server for ${this.opts.rootPath} held ${gib(held)}, past its ${gib(max)} cap, ` +
+              `so tslsp-cli stopped it. Narrow the query: give --file and --line rather than --symbol alone ` +
+              `(that searches every project), and work one package at a time. TSLSP_MAX_MEMORY_MB raises the cap.`,
+          );
+          this.log(`[lsp-client] ${this.stoppedFor.message}`);
+          this.proc.kill("SIGKILL");
+        })
+        .finally(() => {
+          looking = false;
+        });
+    }, 2000);
+    this.memoryTimer.unref?.();
+  }
+
   async dispose(): Promise<void> {
+    if (this.memoryTimer) clearInterval(this.memoryTimer);
     if (this.closed) return;
     try {
       await this.request("shutdown", null, 2000);
